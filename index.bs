@@ -200,7 +200,7 @@ is the [=XRGPUBinding/device=] of the {{XRGPUBinding}} that created it.
 ## XRGPUSubImage ## {#xrgpusubimage-interface}
 
 An {{XRGPUSubImage}} represents a view into a WebGPU-backed composition layer's textures. It provides the {{GPUTexture}}s to render into and a {{GPUTextureViewDescriptor}} that describes which portion of the texture corresponds to the requested view.
-The {{XRSubImage/viewport}} describes the region of the {{XRGPUSubImage/colorTexture}} that corresponds to the requested view. It does not describe the region of the {{XRGPUSubImage/depthStencilTexture}} or {{XRGPUSubImage/motionVectorTexture}}.
+The {{XRSubImage/viewport}} describes the region of the {{XRGPUSubImage/colorTexture}} that corresponds to the requested view. When present, the {{XRGPUSubImage/depthStencilTexture}} has the same corresponding region, except for a subimage of an {{XRProjectionLayer}} when the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled. In that case, the {{XRSubImage/viewport}} does not describe the region of the {{XRGPUSubImage/depthStencilTexture}} or {{XRGPUSubImage/motionVectorTexture}}.
 
 Each {{XRGPUSubImage}} has an associated non-negative integer <dfn for="XRGPUSubImage">array layer
 index</dfn>, which identifies the first array layer belonging to the subimage.
@@ -247,7 +247,7 @@ The returned texture has the following properties:
  - **mipLevelCount**: The {{GPUTextureDescriptor/mipLevelCount}} of the layer's [=color texture descriptor=].
  - **sampleCount**: `1`.
 
-The <dfn attribute for="XRGPUSubImage">depthStencilTexture</dfn> attribute returns the {{GPUTexture}} to be used as the depth/stencil attachment when rendering this sub image, or `null` if no depth/stencil format was specified when creating the layer. When provided, the user agent MAY use the depth information to improve composition quality (for example, for reprojection).
+The <dfn attribute for="XRGPUSubImage">depthStencilTexture</dfn> attribute returns the {{GPUTexture}} containing the depth/stencil data for this sub image, or `null` if no depth/stencil format was specified when creating the layer. For a non-projection layer, or for an {{XRProjectionLayer}} when the [=feature descriptor/space-warp=] [=feature descriptor=] is not enabled, this texture has the same dimensions as the {{XRGPUSubImage/colorTexture}} and can be used as the depth/stencil attachment in the render pass that renders to the color texture. For an {{XRProjectionLayer}} when the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, this texture has the same dimensions as the {{XRGPUSubImage/motionVectorTexture}}, may have different dimensions than the color texture, and is rendered separately as described in [[#spacewarp]]. When provided, the user agent MAY use the depth information to improve composition quality (for example, for reprojection).
 
 When present, the returned texture has the following properties:
 
@@ -285,7 +285,7 @@ When invoked, the user agent MUST run the following steps:
     [=XRGPUSubImage/array layer index=].
  1. Return |descriptor|.
 
-NOTE: The returned descriptor selects a single 2D slice from the texture array via `baseArrayLayer` paired with an `arrayLayerCount` of `1`. The viewport still needs to be applied via `setViewport()` on the render pass encoder.
+NOTE: The returned descriptor selects a single 2D slice from the texture array via `baseArrayLayer` paired with an `arrayLayerCount` of `1`. The viewport still needs to be applied via `setViewport()` when rendering to the color texture and, except for an {{XRProjectionLayer}} when the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, when rendering to the depth/stencil texture. Depth/stencil and motion vector textures used for [=space warp=] are rendered to their full extent as described in [[#spacewarp]].
 
 NOTE: For an {{XRCubeLayer}}, the returned descriptor selects the first face for the requested eye.
 Authors can render the remaining faces by creating descriptors with `baseArrayLayer` increased by
@@ -719,7 +719,7 @@ Each [=XR device=] has a <dfn export>recommended WebGPU texture resolution</dfn>
 
 NOTE: Unlike the recommended WebGL framebuffer resolution defined in the WebXR spec, which concatenates views side-by-side into a single framebuffer, the recommended WebGPU texture resolution describes the size of a single view. When creating projection layers, the user agent allocates a texture array where each layer corresponds to one view, with each layer having the recommended resolution.
 
-Each [=XR device=] has a <dfn export>recommended WebGPU depth-stencil texture resolution</dfn>, which represents the per-view dimensions that the user agent considers sufficient for depth/stencil textures used by the [=XR Compositor=]. This resolution is the same as the [=recommended WebGPU texture resolution=] unless otherwise specified.
+Each [=XR device=] has a <dfn export>recommended WebGPU depth-stencil texture resolution</dfn>, which represents the per-view dimensions that the user agent considers sufficient for depth/stencil textures used by the [=XR Compositor=]. Unless the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, this resolution MUST be equal to the [=recommended WebGPU texture resolution=].
 
 If the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, each [=XR device=] MUST have a <dfn export>recommended WebGPU motion vector texture resolution</dfn>, which represents the per-view dimensions that the user agent considers sufficient for motion vector textures used by [=space warp=]. When the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, the [=recommended WebGPU depth-stencil texture resolution=] MUST be equal to the [=recommended WebGPU motion vector texture resolution=].
 
@@ -845,9 +845,12 @@ steps:
  1. Let (|colorWidth|, |colorHeight|) be the result of [=scale an XR GPU texture size|scaling an XR
     GPU texture size=] of the [=recommended WebGPU texture resolution=] by |scaleFactor| for
     |device|.
- 1. Let (|depthWidth|, |depthHeight|) be the result of [=scale an XR GPU texture size|scaling an XR
-    GPU texture size=] of the [=recommended WebGPU depth-stencil texture resolution=] by
-    |scaleFactor| for |device|.
+ 1. Initialize |depthWidth| to |colorWidth| and |depthHeight| to |colorHeight|.
+ 1. If |session| was created with the [=feature descriptor/space-warp=] [=feature descriptor=]:
+    1. Let (|spaceWarpWidth|, |spaceWarpHeight|) be the result of [=scale an XR GPU texture
+        size|scaling an XR GPU texture size=] of the [=recommended WebGPU depth-stencil texture
+        resolution=] by |scaleFactor| for |device|.
+    1. Set |depthWidth| to |spaceWarpWidth| and |depthHeight| to |spaceWarpHeight|.
  1. Let |arrayLayerCount| be the number of entries in |session|'s [=list of views=].
  1. Let |colorDescriptor| be the result of [=create an XR GPU texture descriptor|creating an XR GPU
     texture descriptor=] with |binding|, |colorWidth|, |colorHeight|, |arrayLayerCount|, `1`,
@@ -861,11 +864,8 @@ steps:
     {{XRGPUProjectionLayerInit/textureUsage}}.
  1. Initialize |motionVectorDescriptor| to `null`.
  1. If |session| was created with the [=feature descriptor/space-warp=] [=feature descriptor=]:
-    1. Let (|motionVectorWidth|, |motionVectorHeight|) be the result of [=scale an XR GPU texture
-        size|scaling an XR GPU texture size=] of the [=recommended WebGPU motion vector texture
-        resolution=] by |scaleFactor| for |device|.
     1. Set |motionVectorDescriptor| to the result of [=create an XR GPU texture descriptor|creating
-        an XR GPU texture descriptor=] with |binding|, |motionVectorWidth|, |motionVectorHeight|,
+        an XR GPU texture descriptor=] with |binding|, |depthWidth|, |depthHeight|,
         |arrayLayerCount|, `1`, {{GPUTextureFormat/"rgba16float"}}, and |init|'s
         {{XRGPUProjectionLayerInit/textureUsage}}.
  1. Let |layer| be a new {{XRProjectionLayer}} in the [=relevant realm=] of |binding|.
@@ -1138,7 +1138,9 @@ When invoked, the user agent MUST run the following steps:
 </div>
 
 <div class="example">
-Rendering a projection layer during an animation frame:
+Rendering a projection layer during an animation frame when the [=feature descriptor/space-warp=]
+[=feature descriptor=] is not enabled. In this case, the color and depth/stencil textures have the
+same dimensions and use the same viewport:
 
   <pre highlight="js">
     function onXRFrame(time, frame) {
@@ -1190,8 +1192,8 @@ To enable [=space warp=], the {{XRSession}} MUST be created with the [=feature d
 If the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, the [=XR Compositor=] MUST make use of depth values, {{XRProjectionLayer/ignoreDepthValues}} MUST be set to `false`, and {{XRGPUBinding/usesDepthValues}} MUST be set to `true`.
 
 When the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, the experience should render representative depth values into the {{XRGPUSubImage/depthStencilTexture}} for each {{XRProjectionLayer}} it submits.
-The {{XRGPUSubImage/depthStencilTexture}} and {{XRGPUSubImage/motionVectorTexture}} will have the same dimensions, which may be different from the dimensions of the {{XRGPUSubImage/colorTexture}}.
-Authors should render depth/stencil and motion vector information to the full extent of the texture view selected by {{XRGPUSubImage/getViewDescriptor()}}, rather than to the {{XRSubImage/viewport}}.
+When the {{XRGPUSubImage/depthStencilTexture}} is not `null`, it and the {{XRGPUSubImage/motionVectorTexture}} MUST have the same dimensions, which MAY be different from the dimensions of the {{XRGPUSubImage/colorTexture}}.
+Authors SHOULD render depth/stencil and motion vector information to the full extent of the texture view selected by {{XRGPUSubImage/getViewDescriptor()}}, rather than to the {{XRSubImage/viewport}}.
 
 NOTE: Since the depth/stencil and motion vector attachments can have different dimensions than the color attachment, they are not intended to be attached to the render pass used to render into the {{XRGPUSubImage/colorTexture}}.
 Authors should render depth/stencil and motion vector information separately at their attachment dimensions.
