@@ -242,7 +242,9 @@ The returned texture has the following properties:
 
  - **dimension**: The {{GPUTextureDescriptor/dimension}} of the layer's [=color texture descriptor=].
  - **format**: The {{GPUTextureDescriptor/format}} of the layer's [=color texture descriptor=].
- - **size**: The {{GPUTextureDescriptor/size}} of the layer's [=color texture descriptor=].
+ - **width**: The width component of the {{GPUTextureDescriptor/size}} of the layer's [=color texture descriptor=].
+ - **height**: The height component of the {{GPUTextureDescriptor/size}} of the layer's [=color texture descriptor=].
+ - **depthOrArrayLayers**: The depth or array layer count component of the {{GPUTextureDescriptor/size}} of the layer's [=color texture descriptor=].
  - **usage**: The {{GPUTextureDescriptor/usage}} of the layer's [=color texture descriptor=].
  - **mipLevelCount**: The {{GPUTextureDescriptor/mipLevelCount}} of the layer's [=color texture descriptor=].
  - **sampleCount**: `1`.
@@ -253,7 +255,9 @@ When present, the returned texture has the following properties:
 
  - **dimension**: The {{GPUTextureDescriptor/dimension}} of the layer's [=depth-stencil texture descriptor=].
  - **format**: The {{GPUTextureDescriptor/format}} of the layer's [=depth-stencil texture descriptor=].
- - **size**: The {{GPUTextureDescriptor/size}} of the layer's [=depth-stencil texture descriptor=].
+ - **width**: The width component of the {{GPUTextureDescriptor/size}} of the layer's [=depth-stencil texture descriptor=].
+ - **height**: The height component of the {{GPUTextureDescriptor/size}} of the layer's [=depth-stencil texture descriptor=].
+ - **depthOrArrayLayers**: The depth or array layer count component of the {{GPUTextureDescriptor/size}} of the layer's [=depth-stencil texture descriptor=].
  - **usage**: The {{GPUTextureDescriptor/usage}} of the layer's [=depth-stencil texture descriptor=].
  - **mipLevelCount**: The {{GPUTextureDescriptor/mipLevelCount}} of the layer's [=depth-stencil texture descriptor=].
  - **sampleCount**: `1`.
@@ -266,7 +270,9 @@ When present, the returned texture has the following properties:
 
  - **dimension**: The {{GPUTextureDescriptor/dimension}} of the layer's [=motion vector texture descriptor=].
  - **format**: The {{GPUTextureDescriptor/format}} of the layer's [=motion vector texture descriptor=].
- - **size**: The {{GPUTextureDescriptor/size}} of the layer's [=motion vector texture descriptor=].
+ - **width**: The width component of the {{GPUTextureDescriptor/size}} of the layer's [=motion vector texture descriptor=].
+ - **height**: The height component of the {{GPUTextureDescriptor/size}} of the layer's [=motion vector texture descriptor=].
+ - **depthOrArrayLayers**: The depth or array layer count component of the {{GPUTextureDescriptor/size}} of the layer's [=motion vector texture descriptor=].
  - **usage**: The {{GPUTextureDescriptor/usage}} of the layer's [=motion vector texture descriptor=].
  - **mipLevelCount**: The {{GPUTextureDescriptor/mipLevelCount}} of the layer's [=motion vector texture descriptor=].
  - **sampleCount**: `1`.
