@@ -483,22 +483,6 @@ The [=XR animation frame=] algorithm is extended as follows: immediately before 
 [=XRFrame/active=] boolean to `false`, the user agent MUST [=release the WebGPU textures=] for every
 [=WebGPU-backed layer=] whose [=current texture frame=] is that {{XRFrame}}.
 
-<div class="algorithm" data-algorithm="scale an XR GPU texture size">
-
-To <dfn>scale an XR GPU texture size</dfn> |recommendedSize| by a double |scaleFactor| for a
-{{GPUDevice}} |device|, the user agent MUST run the following steps:
-
- 1. Let |width| be max(1, floor(|recommendedSize|'s width multiplied by |scaleFactor|)).
- 1. Let |height| be max(1, floor(|recommendedSize|'s height multiplied by |scaleFactor|)).
- 1. Let |maxDimension| be |device|'s {{GPUDevice/limits}}.{{GPUSupportedLimits/maxTextureDimension2D}}.
- 1. If |width| or |height| is greater than |maxDimension|:
-    1. Let |limitScale| be min(|maxDimension| divided by |width|, |maxDimension| divided by |height|).
-    1. Set |width| to max(1, floor(|width| multiplied by |limitScale|)).
-    1. Set |height| to max(1, floor(|height| multiplied by |limitScale|)).
- 1. Return (|width|, |height|).
-
-</div>
-
 ## Supported Texture Formats ## {#supported-texture-formats}
 
 The <dfn>supported color format</dfn>s for {{XRGPUBinding}} layer creation are:
@@ -745,88 +729,19 @@ When invoked, the user agent MUST return the preferred {{GPUTextureFormat}} for 
 
 NOTE: The preferred color format is typically `"rgba8unorm"` or `"bgra8unorm"` depending on the platform. The preferred format for WebXR may differ from the format reported by `navigator.gpu.getPreferredCanvasFormat()`. Authors SHOULD use this method rather than `getPreferredCanvasFormat()` to determine the format for their XR projection layers.
 
-<span id="non-projection-layer-allocation"></span>
+<div class="algorithm" data-algorithm="scale an XR GPU texture size">
 
-<div class="algorithm" data-algorithm="validate WebGPU layer creation">
+To <dfn>scale an XR GPU texture size</dfn> |recommendedSize| by a double |scaleFactor| for a
+{{GPUDevice}} |device|, the user agent MUST run the following steps:
 
-To <dfn>validate WebGPU layer creation</dfn> with an {{XRGPUBinding}} |binding|, the user agent MUST
-run the following steps:
-
- 1. If |binding|'s [=XRGPUBinding/session=] has [=ended=], throw an {{InvalidStateError}}
-    {{DOMException}}.
- 1. If |binding|'s [=XRGPUBinding/device=] has been [=destroyed=], throw an {{InvalidStateError}}
-    {{DOMException}}.
- 1. If the [=feature descriptor/layers=] [=feature descriptor=] is not enabled for |binding|'s
-    [=XRGPUBinding/session=], throw a {{NotSupportedError}} {{DOMException}}.
-
-</div>
-
-<div class="algorithm" data-algorithm="determine a WebGPU layer texture layout">
-
-To <dfn>determine a WebGPU layer texture layout</dfn> from an {{XRGPULayerInit}} |init|, the user
-agent MUST run the following steps:
-
- 1. Let |width| be |init|'s {{XRGPULayerInit/viewPixelWidth}}.
- 1. Let |height| be |init|'s {{XRGPULayerInit/viewPixelHeight}}.
- 1. Let |arrayLayerCount| be `1`.
- 1. Switch on |init|'s {{XRGPULayerInit/layout}}:
-    <dl class="switch">
-      <dt>{{XRLayerLayout/"mono"}}</dt>
-      <dd>Do nothing.</dd>
-      <dt>{{XRLayerLayout/"stereo"}}</dt>
-      <dd>Set |arrayLayerCount| to `2`.</dd>
-      <dt>{{XRLayerLayout/"stereo-left-right"}}</dt>
-      <dd>Set |width| to |width| multiplied by `2`.</dd>
-      <dt>{{XRLayerLayout/"stereo-top-bottom"}}</dt>
-      <dd>Set |height| to |height| multiplied by `2`.</dd>
-      <dt>{{XRLayerLayout/"default"}}</dt>
-      <dd>Throw a {{TypeError}}.</dd>
-    </dl>
- 1. Return (|width|, |height|, |arrayLayerCount|).
-
-</div>
-
-<div class="algorithm" data-algorithm="initialize a WebGPU-backed layer">
-
-To <dfn>initialize a WebGPU-backed layer</dfn> |layer| with an {{XRGPUBinding}} |binding|, an
-{{XRGPULayerInit}} |init|, non-negative integers |width| and |height|, and a positive integer
-|arrayLayerCount|, the user agent MUST run the following steps:
-
- 1. Let |session| be |binding|'s [=XRGPUBinding/session=].
- 1. If |width| or |height| is `0`, throw a {{TypeError}}.
- 1. If |init|'s {{XRGPULayerInit/colorFormat}} is not a [=supported color format=], throw a
-    {{NotSupportedError}} {{DOMException}}.
- 1. If |init|'s {{XRGPULayerInit/depthStencilFormat}} is present and is not a
-    [=supported depth-stencil format=], throw a {{NotSupportedError}} {{DOMException}}.
- 1. If |init|'s {{XRGPULayerInit/mipLevels}} is less than `1`, throw an {{InvalidStateError}}
-    {{DOMException}}.
- 1. Let |maximumMipLevelCount| be floor(log<sub>2</sub>(max(|width|, |height|))) + 1.
- 1. Let |mipLevelCount| be min(|init|'s {{XRGPULayerInit/mipLevels}}, |maximumMipLevelCount|).
-    The user agent MAY reduce |mipLevelCount| further if it cannot support the requested number of
-    mip levels, but it MUST NOT reduce it below `1`.
- 1. Let |colorDescriptor| be the result of [=create an XR GPU texture descriptor|creating an XR GPU
-    texture descriptor=] with |binding|, |width|, |height|, |arrayLayerCount|, |mipLevelCount|,
-    |init|'s {{XRGPULayerInit/colorFormat}}, and |init|'s {{XRGPULayerInit/textureUsage}}.
- 1. Initialize |depthStencilDescriptor| to `null`.
- 1. If |init|'s {{XRGPULayerInit/depthStencilFormat}} is present, set |depthStencilDescriptor| to
-    the result of [=create an XR GPU texture descriptor|creating an XR GPU texture descriptor=]
-    with |binding|, |width|, |height|, |arrayLayerCount|, |mipLevelCount|, |init|'s
-    {{XRGPULayerInit/depthStencilFormat}}, and |init|'s {{XRGPULayerInit/textureUsage}}.
- 1. Run [=initialize a composition layer=] on |layer| with |session|.
- 1. Run [=setting the space on a layer=] with |init|'s {{XRGPULayerInit/space}} and |layer|.
- 1. Set |layer|'s [=XRCompositionLayer/WebGPU device=] to |binding|'s
-    [=XRGPUBinding/device=].
- 1. Set |layer|'s {{XRCompositionLayer/layout}} to |init|'s {{XRGPULayerInit/layout}}.
- 1. Set |layer|'s [=XRCompositionLayer/isStatic=] to |init|'s {{XRGPULayerInit/isStatic}}.
- 1. Set |layer|'s {{XRCompositionLayer/mipLevels}} to |mipLevelCount|.
- 1. Set |layer|'s {{XRCompositionLayer/needsRedraw}} to `true`.
- 1. Set |layer|'s [=color texture descriptor=] to |colorDescriptor|.
- 1. Set |layer|'s [=depth-stencil texture descriptor=] to |depthStencilDescriptor|.
- 1. Set |layer|'s [=XRCompositionLayer/list of texture sets=] to the result of
-    [=allocate WebGPU layer texture sets|allocating WebGPU layer texture sets=] with |binding|,
-    |colorDescriptor|, |depthStencilDescriptor|, and `null`.
- 1. Set |layer|'s [=current color texture=], [=current depth-stencil texture=],
-    [=current texture set=], and [=current texture frame=] to `null`.
+ 1. Let |width| be max(1, floor(|recommendedSize|'s width multiplied by |scaleFactor|)).
+ 1. Let |height| be max(1, floor(|recommendedSize|'s height multiplied by |scaleFactor|)).
+ 1. Let |maxDimension| be |device|'s {{GPUDevice/limits}}.{{GPUSupportedLimits/maxTextureDimension2D}}.
+ 1. If |width| or |height| is greater than |maxDimension|:
+    1. Let |limitScale| be min(|maxDimension| divided by |width|, |maxDimension| divided by |height|).
+    1. Set |width| to max(1, floor(|width| multiplied by |limitScale|)).
+    1. Set |height| to max(1, floor(|height| multiplied by |limitScale|)).
+ 1. Return (|width|, |height|).
 
 </div>
 
@@ -917,6 +832,91 @@ Creating a projection layer with color and depth and making it the active layer 
     });
     session.updateRenderState({ layers: [layer] });
   </pre>
+</div>
+
+<span id="non-projection-layer-allocation"></span>
+
+<div class="algorithm" data-algorithm="validate WebGPU layer creation">
+
+To <dfn>validate WebGPU layer creation</dfn> with an {{XRGPUBinding}} |binding|, the user agent MUST
+run the following steps:
+
+ 1. If |binding|'s [=XRGPUBinding/session=] has [=ended=], throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. If |binding|'s [=XRGPUBinding/device=] has been [=destroyed=], throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. If the [=feature descriptor/layers=] [=feature descriptor=] is not enabled for |binding|'s
+    [=XRGPUBinding/session=], throw a {{NotSupportedError}} {{DOMException}}.
+
+</div>
+
+<div class="algorithm" data-algorithm="determine a WebGPU layer texture layout">
+
+To <dfn>determine a WebGPU layer texture layout</dfn> from an {{XRGPULayerInit}} |init|, the user
+agent MUST run the following steps:
+
+ 1. Let |width| be |init|'s {{XRGPULayerInit/viewPixelWidth}}.
+ 1. Let |height| be |init|'s {{XRGPULayerInit/viewPixelHeight}}.
+ 1. Let |arrayLayerCount| be `1`.
+ 1. Switch on |init|'s {{XRGPULayerInit/layout}}:
+    <dl class="switch">
+      <dt>{{XRLayerLayout/"mono"}}</dt>
+      <dd>Do nothing.</dd>
+      <dt>{{XRLayerLayout/"stereo"}}</dt>
+      <dd>Set |arrayLayerCount| to `2`.</dd>
+      <dt>{{XRLayerLayout/"stereo-left-right"}}</dt>
+      <dd>Set |width| to |width| multiplied by `2`.</dd>
+      <dt>{{XRLayerLayout/"stereo-top-bottom"}}</dt>
+      <dd>Set |height| to |height| multiplied by `2`.</dd>
+      <dt>{{XRLayerLayout/"default"}}</dt>
+      <dd>Throw a {{TypeError}}.</dd>
+    </dl>
+ 1. Return (|width|, |height|, |arrayLayerCount|).
+
+</div>
+
+<div class="algorithm" data-algorithm="initialize a WebGPU-backed layer">
+
+To <dfn>initialize a WebGPU-backed layer</dfn> |layer| with an {{XRGPUBinding}} |binding|, an
+{{XRGPULayerInit}} |init|, non-negative integers |width| and |height|, and a positive integer
+|arrayLayerCount|, the user agent MUST run the following steps:
+
+ 1. Let |session| be |binding|'s [=XRGPUBinding/session=].
+ 1. If |width| or |height| is `0`, throw a {{TypeError}}.
+ 1. If |init|'s {{XRGPULayerInit/colorFormat}} is not a [=supported color format=], throw a
+    {{NotSupportedError}} {{DOMException}}.
+ 1. If |init|'s {{XRGPULayerInit/depthStencilFormat}} is present and is not a
+    [=supported depth-stencil format=], throw a {{NotSupportedError}} {{DOMException}}.
+ 1. If |init|'s {{XRGPULayerInit/mipLevels}} is less than `1`, throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. Let |maximumMipLevelCount| be floor(log<sub>2</sub>(max(|width|, |height|))) + 1.
+ 1. Let |mipLevelCount| be min(|init|'s {{XRGPULayerInit/mipLevels}}, |maximumMipLevelCount|).
+    The user agent MAY reduce |mipLevelCount| further if it cannot support the requested number of
+    mip levels, but it MUST NOT reduce it below `1`.
+ 1. Let |colorDescriptor| be the result of [=create an XR GPU texture descriptor|creating an XR GPU
+    texture descriptor=] with |binding|, |width|, |height|, |arrayLayerCount|, |mipLevelCount|,
+    |init|'s {{XRGPULayerInit/colorFormat}}, and |init|'s {{XRGPULayerInit/textureUsage}}.
+ 1. Initialize |depthStencilDescriptor| to `null`.
+ 1. If |init|'s {{XRGPULayerInit/depthStencilFormat}} is present, set |depthStencilDescriptor| to
+    the result of [=create an XR GPU texture descriptor|creating an XR GPU texture descriptor=]
+    with |binding|, |width|, |height|, |arrayLayerCount|, |mipLevelCount|, |init|'s
+    {{XRGPULayerInit/depthStencilFormat}}, and |init|'s {{XRGPULayerInit/textureUsage}}.
+ 1. Run [=initialize a composition layer=] on |layer| with |session|.
+ 1. Run [=setting the space on a layer=] with |init|'s {{XRGPULayerInit/space}} and |layer|.
+ 1. Set |layer|'s [=XRCompositionLayer/WebGPU device=] to |binding|'s
+    [=XRGPUBinding/device=].
+ 1. Set |layer|'s {{XRCompositionLayer/layout}} to |init|'s {{XRGPULayerInit/layout}}.
+ 1. Set |layer|'s [=XRCompositionLayer/isStatic=] to |init|'s {{XRGPULayerInit/isStatic}}.
+ 1. Set |layer|'s {{XRCompositionLayer/mipLevels}} to |mipLevelCount|.
+ 1. Set |layer|'s {{XRCompositionLayer/needsRedraw}} to `true`.
+ 1. Set |layer|'s [=color texture descriptor=] to |colorDescriptor|.
+ 1. Set |layer|'s [=depth-stencil texture descriptor=] to |depthStencilDescriptor|.
+ 1. Set |layer|'s [=XRCompositionLayer/list of texture sets=] to the result of
+    [=allocate WebGPU layer texture sets|allocating WebGPU layer texture sets=] with |binding|,
+    |colorDescriptor|, |depthStencilDescriptor|, and `null`.
+ 1. Set |layer|'s [=current color texture=], [=current depth-stencil texture=],
+    [=current texture set=], and [=current texture frame=] to `null`.
+
 </div>
 
 <span id="xrgpubinding-createotherlayers"></span>
