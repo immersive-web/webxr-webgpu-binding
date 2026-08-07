@@ -431,7 +431,7 @@ To <dfn>acquire WebGPU textures</dfn> for a [=WebGPU-backed layer=] |layer| and 
 To <dfn>expire the WebGPU textures</dfn> for a [=WebGPU-backed layer=] |layer|, the user agent MUST
 run the following steps:
 
- 1. If |layer|'s [=current color texture=] is not `null`, call {{GPUTexture/destroy()}} on it.
+ 1. If |layer|'s [=current color texture=] is not `null`, call {{GPUTexture/destroy()}} on it (without destroying the underlying storage) to terminate write access to the image.
  1. If |layer|'s [=current depth-stencil texture=] is not `null`, call {{GPUTexture/destroy()}} on
     it.
  1. If |layer| is an {{XRProjectionLayer}} and its [=current motion vector texture=] is not `null`,
