@@ -985,6 +985,12 @@ steps:
 
 </div>
 
+NOTE: The <a href="https://immersive-web.github.io/layers/#spaces">WebXR Layers space
+requirements</a> allow {{XRQuadLayer}} and {{XRCylinderLayer}} to use any {{XRSpace}}, including
+{{XRReferenceSpaceType/"viewer"}} for head-locked content. {{XREquirectLayer}} and {{XRCubeLayer}}
+are restricted to {{XRReferenceSpace}} values other than {{XRReferenceSpaceType/"viewer"}} so that
+environment content, such as 360-degree media and skyboxes, preserves rotational reprojection.
+
 <span id="xrgpubinding-createequirectlayer"></span>
 
 <div class="algorithm" data-algorithm="createEquirectLayer">
@@ -1090,8 +1096,6 @@ steps:
 <div class="algorithm" data-algorithm="getSubImage">
 
 The <dfn method for="XRGPUBinding">getSubImage(|layer|, |frame|, |eye|)</dfn> method returns an {{XRGPUSubImage}} for non-projection layers.
-
-This method MUST only succeed if the `"layers"` [=feature descriptor=] was requested and enabled for the session. If `"layers"` is not enabled, the user agent MUST throw a {{NotSupportedError}} {{DOMException}}.
 
 When invoked, the user agent MUST run the following steps:
 
