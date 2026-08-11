@@ -49,6 +49,8 @@ spec: webxrlayers-1; urlPrefix: https://immersive-web.github.io/layers/
         text: setting the space on a layer; url: setting-the-space-on-a-layer
         text: isStatic; for: XRCompositionLayer; url: xrcompositionlayer-isstatic
         text: session; for: XRCompositionLayer; url: xrcompositionlayer-session
+        text: destroyed; for: XRCompositionLayer; url: xrcompositionlayer-destroyed
+        text: destroy the resources for a layer; url: destroy-the-resources-for-a-layer
 
 spec: webgpu; urlPrefix: https://gpuweb.github.io/gpuweb/
     type: dfn
@@ -464,11 +466,10 @@ To <dfn>release the WebGPU textures</dfn> for a [=WebGPU-backed layer=] |layer| 
 
 </div>
 
-<div class="algorithm" data-algorithm="destroy a WebGPU-backed layer">
+<div class="algorithm" data-algorithm="destroy the resources for a WebGPU-backed layer">
 
-When {{XRCompositionLayer/destroy()}} is invoked on a [=WebGPU-backed layer=] |layer|, the user
-agent MUST run the following steps instead of the WebXR Layers API's steps for calling `destroy()`
-on a layer:
+When the user agent is to [=destroy the resources for a layer=] with a [=WebGPU-backed layer=]
+|layer|, it MUST run the following steps instead of the WebXR Layers API's steps:
 
  1. Let |textureSets| be |layer|'s [=XRCompositionLayer/list of texture sets=].
  1. Run [=expire the WebGPU textures=] for |layer|.
@@ -1071,6 +1072,8 @@ To <dfn>validate WebGPU subimage creation</dfn> with an {{XRGPUBinding}} |bindin
 steps:
 
  1. If |layer| is not a [=WebGPU-backed layer=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |layer|'s [=XRCompositionLayer/destroyed=] boolean is `true`, throw an
+    {{InvalidStateError}} {{DOMException}}.
  1. Let |session| be |binding|'s [=XRGPUBinding/session=].
  1. If |layer|'s [=XRCompositionLayer/session=] is not |session|, throw an {{InvalidStateError}}
     {{DOMException}}.
