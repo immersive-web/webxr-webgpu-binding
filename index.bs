@@ -20,11 +20,6 @@ Markup Shorthands: idl yes
 Markup Shorthands: css no
 Assume Explicit For: yes
 
-Warning: custom
-Custom Warning Title: Unstable API
-Custom Warning Text:
-  <b>The API represented in this document is under development and may change at any time.</b>
-  <p>For additional context on the use of this API please reference the <a href="https://github.com/immersive-web/webxr-webgpu-binding/blob/master/explainer.md">WebXR/WebGPU Binding Module Explainer</a>.</p>
 </pre>
 
 <pre class="anchors">
@@ -41,10 +36,21 @@ spec: webxr; urlPrefix: https://immersive-web.github.io/webxr/
         text: XR Compositor; url: xr-compositor
         text: XRView's session; url: xrview-session
         text: XRFrame's session; url: dom-xrframe-session
+        text: active; for: XRFrame; url: xrframe-active
+        text: frame; for: XRView; url: xrview-frame
+        text: active; for: view; url: view-active
+        text: type; for: XRReferenceSpace; url: xrreferencespace-type
 
 spec: webxrlayers-1; urlPrefix: https://immersive-web.github.io/layers/
     type: dfn
         text: space-warp; for: feature descriptor; url: feature-descriptor-space-warp
+        text: layers; for: feature descriptor; url: feature-descriptor-layers
+        text: initialize a composition layer; url: initialize-a-composition-layer
+        text: setting the space on a layer; url: setting-the-space-on-a-layer
+        text: isStatic; for: XRCompositionLayer; url: xrcompositionlayer-isstatic
+        text: session; for: XRCompositionLayer; url: xrcompositionlayer-session
+        text: destroyed; for: XRCompositionLayer; url: xrcompositionlayer-destroyed
+        text: destroy the resources for a layer; url: destroy-the-resources-for-a-layer
 
 spec: webgpu; urlPrefix: https://gpuweb.github.io/gpuweb/
     type: dfn
@@ -65,31 +71,6 @@ spec: webxrlayers-1;
 <link rel="icon" type="image/png" sizes="96x96" href="favicon-96x96.png">
 
 <style>
-  .unstable::before {
-    content: "This section is not stable";
-    display: block;
-    font-weight: bold;
-    text-align: right;
-    color: red;
-  }
-  .unstable {
-    border: thin solid pink;
-    border-radius: .5em;
-    padding: .5em;
-    margin: .5em calc(-0.5em - 1px);
-    background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='290'><text transform='rotate(-45)' text-anchor='middle' font-family='sans-serif' font-weight='bold' font-size='70' y='210' opacity='.1'>Unstable</text></svg>");
-    background-repeat: repeat;
-    background-color: #FFF4F4;
-  }
-  .unstable h3:first-of-type {
-    margin-top: 0.5rem;
-  }
-
-  .unstable.example:not(.no-marker)::before {
-    content: "Example " counter(example) " (Unstable)";
-    float: none;
-  }
-
   .non-normative::before {
     content: "This section is non-normative.";
     font-style: italic;
@@ -205,233 +186,44 @@ An <dfn>XR-compatible adapter</dfn> is a {{GPUAdapter}} that was successfully re
 
 An <dfn export>XR-compatible device</dfn> is a {{GPUDevice}} that was created from an [=XR-compatible adapter=].
 
-## XRGPUBinding ## {#xrgpubinding-interface}
+# Layer Types # {#xrlayertypes}
 
-The {{XRGPUBinding}} interface is the entry point for using WebGPU with a [=WebGPU-compatible session=]. It provides methods for creating WebGPU-backed {{XRCompositionLayer}}s and obtaining {{XRGPUSubImage}}s for rendering.
+<span id="layer-types"></span>
 
-<script type=idl>
-[Exposed=(Window), SecureContext]
-interface XRGPUBinding {
-  constructor(XRSession session, GPUDevice device);
+{{XRCompositionLayer}}, {{XRProjectionLayer}}, {{XRQuadLayer}}, {{XRCylinderLayer}},
+{{XREquirectLayer}}, and {{XRCubeLayer}} are defined by the WebXR Layers API.
 
-  readonly attribute double nativeProjectionScaleFactor;
-  readonly attribute boolean usesDepthValues;
-
-  XRProjectionLayer createProjectionLayer(optional XRGPUProjectionLayerInit init = {});
-  XRQuadLayer createQuadLayer(optional XRGPUQuadLayerInit init = {});
-  XRCylinderLayer createCylinderLayer(optional XRGPUCylinderLayerInit init = {});
-  XREquirectLayer createEquirectLayer(optional XRGPUEquirectLayerInit init = {});
-  XRCubeLayer createCubeLayer(optional XRGPUCubeLayerInit init = {});
-
-  XRGPUSubImage getSubImage(XRCompositionLayer layer, XRFrame frame, optional XREye eye = "none");
-  XRGPUSubImage getViewSubImage(XRProjectionLayer layer, XRView view);
-
-  GPUTextureFormat getPreferredColorFormat();
-};
-</script>
-
-Each {{XRGPUBinding}} has an associated <dfn for="XRGPUBinding">session</dfn> which is the {{XRSession}} it was created with, and an associated <dfn for="XRGPUBinding">device</dfn> which is the {{GPUDevice}} it was created with.
-
-### Constructor ### {#xrgpubinding-constructor}
-
-The <dfn constructor for="XRGPUBinding">XRGPUBinding(|session|, |device|)</dfn> constructor MUST perform the following steps when invoked:
-
- 1. If |session|'s [=ended=] value is `true`, throw an {{InvalidStateError}} {{DOMException}}.
- 1. If |session| is NOT a [=WebGPU-compatible session=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. If |device| has been [=destroyed=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. If |device| was NOT created from an [=XR-compatible adapter=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. Let |binding| be a new {{XRGPUBinding}}.
- 1. Set |binding|'s [=XRGPUBinding/session=] to |session|.
- 1. Set |binding|'s [=XRGPUBinding/device=] to |device|.
- 1. Return |binding|.
-
-<div class="example">
-Creating an {{XRGPUBinding}}:
-
-  <pre highlight="js">
-    const adapter = await navigator.gpu.requestAdapter({ xrCompatible: true });
-    const device = await adapter.requestDevice();
-    const binding = new XRGPUBinding(session, device);
-  </pre>
-</div>
-
-### Attributes ### {#xrgpubinding-attributes}
-
-The <dfn attribute for="XRGPUBinding">nativeProjectionScaleFactor</dfn> attribute returns the scale factor that, when applied to the [=recommended WebGPU texture resolution=], would result in a 1:1 texel-to-pixel ratio at the center of the user's view. This value MAY change over the lifetime of the session.
-
-The <dfn attribute for="XRGPUBinding">usesDepthValues</dfn> attribute, if `false`, indicates that the [=XR Compositor=] MUST NOT make use of values in a depth/stencil texture. When the attribute is `true`, it indicates that the contents of the depth/stencil texture will be used by the [=XR Compositor=] and are expected to be representative of the scene rendered into the layer. If the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, this attribute MUST return `true`.
-
-### Recommended WebGPU Texture Resolution ### {#recommended-texture-resolution}
-
-Each [=XR device=] has a <dfn export>recommended WebGPU texture resolution</dfn>, which represents the per-view dimensions that the user agent considers a good balance between rendering quality and performance for that device. The recommended resolution is determined by taking the maximum width and height across all of the session's views, scaled by a user agent-defined default scale factor.
-
-NOTE: Unlike the recommended WebGL framebuffer resolution defined in the WebXR spec, which concatenates views side-by-side into a single framebuffer, the recommended WebGPU texture resolution describes the size of a single view. When creating projection layers, the user agent allocates a texture array where each layer corresponds to one view, with each layer having the recommended resolution.
-
-Each [=XR device=] has a <dfn export>recommended WebGPU depth-stencil texture resolution</dfn>, which represents the per-view dimensions that the user agent considers sufficient for depth/stencil textures used by the [=XR Compositor=]. This resolution is the same as the [=recommended WebGPU texture resolution=] unless otherwise specified.
-
-If the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, each [=XR device=] MUST have a <dfn export>recommended WebGPU motion vector texture resolution</dfn>, which represents the per-view dimensions that the user agent considers sufficient for motion vector textures used by [=space warp=]. When the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, the [=recommended WebGPU depth-stencil texture resolution=] MUST be equal to the [=recommended WebGPU motion vector texture resolution=].
-
-The {{XRGPUBinding/nativeProjectionScaleFactor}} attribute can be used to determine the scale factor needed to achieve the native 1:1 resolution. A {{XRGPUProjectionLayerInit/scaleFactor}} of `1.0` in {{XRGPUBinding/createProjectionLayer()}} uses the recommended resolution directly.
-
-### getPreferredColorFormat ### {#xrgpubinding-getpreferredcolorformat}
-
-The <dfn method for="XRGPUBinding">getPreferredColorFormat()</dfn> method returns the {{GPUTextureFormat}} that the user agent recommends for the color attachments of layers created with this binding.
-
-When invoked, the user agent MUST return the preferred {{GPUTextureFormat}} for the session's [=XR device=].
-
-NOTE: The preferred color format is typically `"rgba8unorm"` or `"bgra8unorm"` depending on the platform. The preferred format for WebXR may differ from the format reported by `navigator.gpu.getPreferredCanvasFormat()`. Authors SHOULD use this method rather than `getPreferredCanvasFormat()` to determine the format for their XR projection layers.
-
-### createProjectionLayer ### {#xrgpubinding-createprojectionlayer}
-
-The <dfn method for="XRGPUBinding">createProjectionLayer(|init|)</dfn> method creates a new {{XRProjectionLayer}} backed by WebGPU textures.
-
-When invoked, the user agent MUST run the following steps:
-
- 1. If the [=XRGPUBinding/session=] has [=ended=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. If the [=XRGPUBinding/device=] has been [=destroyed=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. Let |colorFormat| be |init|'s {{XRGPUProjectionLayerInit/colorFormat}}.
- 1. If |colorFormat| is not a [=supported color format=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. If |init|'s {{XRGPUProjectionLayerInit/depthStencilFormat}} is present and is not a [=supported depth-stencil format=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. Let |scaleFactor| be |init|'s {{XRGPUProjectionLayerInit/scaleFactor}}, clamped to the range [0.2, max({{XRGPUBinding/nativeProjectionScaleFactor}}, 1.0)].
- 1. Let |recommendedSize| be the [=recommended WebGPU texture resolution=] for the session's [=XR device=].
- 1. Let |textureSize| be |recommendedSize| scaled by |scaleFactor|.
- 1. Let |depthStencilSize| be the [=recommended WebGPU depth-stencil texture resolution=] for the session's [=XR device=], scaled by |scaleFactor|.
- 1. Let |maxDimension| be the [=XRGPUBinding/device=]'s `maxTextureDimension2D` limit.
- 1. If either dimension of |textureSize| exceeds |maxDimension|, scale |textureSize| proportionally so the largest dimension equals |maxDimension|.
- 1. If either dimension of |depthStencilSize| exceeds |maxDimension|, scale |depthStencilSize| proportionally so the largest dimension equals |maxDimension|.
- 1. Create a new {{XRProjectionLayer}} with color textures of size |textureSize| and format |colorFormat|.
- 1. If |init|'s {{XRGPUProjectionLayerInit/depthStencilFormat}} is present, let |depthStencilFormat| be |init|'s {{XRGPUProjectionLayerInit/depthStencilFormat}} and allocate depth/stencil textures of size |depthStencilSize| and format |depthStencilFormat|.
- 1. If the [=XRGPUBinding/session=] was created with the [=feature descriptor/space-warp=] [=feature descriptor=], allocate motion vector textures of size |depthStencilSize| and format `"rgba16float"`.
- 1. Return the {{XRProjectionLayer}}.
-
-NOTE: The textures allocated for projection layers are typically texture arrays, with one layer per view (e.g., 2 layers for stereoscopic VR). The number of layers is determined by the session's view count.
-
-<div class="example">
-Creating a projection layer with color and depth and making it the active layer for the session:
-
-  <pre highlight="js">
-    const layer = binding.createProjectionLayer({
-      colorFormat: binding.getPreferredColorFormat(),
-      depthStencilFormat: 'depth24plus',
-    });
-    session.updateRenderState({ layers: [layer] });
-  </pre>
-</div>
-
-<div class="unstable">
-
-### createQuadLayer / createCylinderLayer / createEquirectLayer / createCubeLayer ### {#xrgpubinding-createotherlayers}
-
-NOTE: Non-projection layer types are still in development and are not yet supported by any user agent. The interfaces described in this section and the associated layer init dictionaries are subject to change.
-
-The <dfn method for="XRGPUBinding">createQuadLayer(|init|)</dfn>,
-<dfn method for="XRGPUBinding">createCylinderLayer(|init|)</dfn>,
-<dfn method for="XRGPUBinding">createEquirectLayer(|init|)</dfn>, and
-<dfn method for="XRGPUBinding">createCubeLayer(|init|)</dfn> methods each create a new layer of the corresponding type backed by WebGPU textures.
-
-These methods MUST only succeed if the `"layers"` [=feature descriptor=] was requested and enabled for the session. If `"layers"` is not enabled, the user agent MUST throw a {{NotSupportedError}} {{DOMException}}.
-
-When any of these methods are invoked, the user agent MUST run the following steps:
-
- 1. If the [=XRGPUBinding/session=] has [=ended=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. If the [=XRGPUBinding/device=] has been [=destroyed=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. If the `"layers"` [=feature descriptor=] is not enabled for the session, throw a {{NotSupportedError}} {{DOMException}}.
- 1. If |init|'s color format is not a [=supported color format=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. If |init|'s depth/stencil format is present and is not a [=supported depth-stencil format=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. Create and return a new layer of the appropriate type using the remaining fields of |init|.
-
-### getSubImage ### {#xrgpubinding-getsubimage}
-
-The <dfn method for="XRGPUBinding">getSubImage(|layer|, |frame|, |eye|)</dfn> method returns an {{XRGPUSubImage}} for non-projection layers.
-
-This method MUST only succeed if the `"layers"` [=feature descriptor=] was requested and enabled for the session. If `"layers"` is not enabled, the user agent MUST throw a {{NotSupportedError}} {{DOMException}}.
-
-When invoked, the user agent MUST run the following steps:
-
- 1. If the `"layers"` [=feature descriptor=] is not enabled for the session, throw a {{NotSupportedError}} {{DOMException}}.
- 1. If |layer| was not created by this {{XRGPUBinding}}, throw an {{InvalidStateError}} {{DOMException}}.
- 1. If |frame|'s [=XRFrame's session|session=] is not the [=XRGPUBinding/session=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. If |frame| is not an active [=XR animation frame=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. Let |subImage| be a new {{XRGPUSubImage}}.
- 1. Set |subImage|'s {{XRGPUSubImage/colorTexture}} to the layer's [=current color texture=].
- 1. Set |subImage|'s {{XRGPUSubImage/depthStencilTexture}} to the layer's [=current depth-stencil texture=], or `null` if no depth/stencil format was specified during layer creation.
- 1. Set |subImage|'s {{XRGPUSubImage/motionVectorTexture}} to `null`.
- 1. Set |subImage|'s viewport based on the |eye| parameter and the layer's layout.
- 1. Set |subImage|'s array layer index based on the |eye| parameter.
- 1. Return |subImage|.
-
-</div>
-
-### getViewSubImage ### {#xrgpubinding-getviewsubimage}
-
-The <dfn method for="XRGPUBinding">getViewSubImage(|layer|, |view|)</dfn> method returns an {{XRGPUSubImage}} for a specific view of a projection layer.
-
-When invoked, the user agent MUST run the following steps:
-
- 1. If |layer| was not created by this {{XRGPUBinding}}, throw an {{InvalidStateError}} {{DOMException}}.
- 1. If |view|'s [=XRView's session|session=] is not the [=XRGPUBinding/session=], throw an {{InvalidStateError}} {{DOMException}}.
- 1. Let |subImage| be a new {{XRGPUSubImage}}.
- 1. Set |subImage|'s {{XRGPUSubImage/colorTexture}} to the layer's [=current color texture=].
- 1. Set |subImage|'s {{XRGPUSubImage/depthStencilTexture}} to the layer's [=current depth-stencil texture=], or `null` if no depth/stencil format was specified during layer creation.
- 1. Set |subImage|'s {{XRGPUSubImage/motionVectorTexture}} to the layer's [=current motion vector texture=], or `null` if the [=feature descriptor/space-warp=] [=feature descriptor=] was not enabled when the session was created.
- 1. Set |subImage|'s array layer index to the view's index.
- 1. Set |subImage|'s viewport to the region of the {{XRGPUSubImage/colorTexture}} corresponding to |view|, adjusted by the current viewport scale.
- 1. Return |subImage|.
-
-<div class="example">
-Rendering a projection layer during an animation frame:
-
-  <pre highlight="js">
-    function onXRFrame(time, frame) {
-      session.requestAnimationFrame(onXRFrame);
-
-      const pose = frame.getViewerPose(refSpace);
-      if (!pose) return;
-
-      const commandEncoder = device.createCommandEncoder();
-
-      for (const view of pose.views) {
-        const subImage = binding.getViewSubImage(layer, view);
-        const viewDesc = subImage.getViewDescriptor();
-
-        const passEncoder = commandEncoder.beginRenderPass({
-          colorAttachments: [{
-            view: subImage.colorTexture.createView(viewDesc),
-            loadOp: 'clear',
-            storeOp: 'store',
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          }],
-          depthStencilAttachment: {
-            view: subImage.depthStencilTexture.createView(viewDesc),
-            depthLoadOp: 'clear',
-            depthClearValue: 1.0,
-            depthStoreOp: 'store',
-          },
-        });
-
-        const vp = subImage.viewport;
-        passEncoder.setViewport(vp.x, vp.y, vp.width, vp.height, 0.0, 1.0);
-
-        // Render scene from the viewpoint of view...
-
-        passEncoder.end();
-      }
-
-      device.queue.submit([commandEncoder.finish()]);
-    }
-  </pre>
-</div>
+An {{XRCompositionLayer}} created by an {{XRGPUBinding}} is a <dfn>WebGPU-backed layer</dfn>. Each
+[=WebGPU-backed layer=] has an associated <dfn for="XRCompositionLayer">WebGPU device</dfn>, which
+is the [=XRGPUBinding/device=] of the {{XRGPUBinding}} that created it.
 
 # Rendering # {#rendering}
 
 ## XRGPUSubImage ## {#xrgpusubimage-interface}
 
 An {{XRGPUSubImage}} represents a view into a WebGPU-backed composition layer's textures. It provides the {{GPUTexture}}s to render into and a {{GPUTextureViewDescriptor}} that describes which portion of the texture corresponds to the requested view.
-The {{XRSubImage/viewport}} describes the region of the {{XRGPUSubImage/colorTexture}} that corresponds to the requested view. It does not describe the region of the {{XRGPUSubImage/depthStencilTexture}} or {{XRGPUSubImage/motionVectorTexture}}.
+The {{XRSubImage/viewport}} describes the region of the {{XRGPUSubImage/colorTexture}} that corresponds to the requested view. When present, the {{XRGPUSubImage/depthStencilTexture}} has the same corresponding region, except when the {{XRGPUSubImage/motionVectorTexture}} is not `null`. In that case, the {{XRSubImage/viewport}} does not describe the region of the depth/stencil or motion vector texture.
 
-Each {{XRCompositionLayer}} created with an {{XRGPUBinding}} has an associated <dfn>current color texture</dfn> and an optional <dfn>current depth-stencil texture</dfn>. Each {{XRProjectionLayer}} created with an {{XRGPUBinding}} has an optional <dfn>current motion vector texture</dfn>. These are {{GPUTexture}} objects allocated and managed by the user agent's swap chain for the layer. At the beginning of each [=XR animation frame=], the user agent provides new textures for rendering. The color and motion vector textures MUST be cleared to zero before being provided to the application. The depth component of depth/stencil textures MUST be cleared to `1.0`, and the stencil component MUST be cleared to `0`. The textures from the previous frame are submitted to the compositor and are no longer available for rendering.
+Each {{XRGPUSubImage}} has an associated non-negative integer <dfn for="XRGPUSubImage">array layer
+index</dfn>, which identifies the first array layer belonging to the subimage.
 
-Before the [=XR Compositor=] consumes a layer's [=current color texture=], [=current depth-stencil texture=], or [=current motion vector texture=] for an {{XRFrame}}, the user agent MUST ensure that all WebGPU work submitted during the processing of that {{XRFrame}} that writes to those textures has completed, or MUST synchronize the [=XR Compositor=] with that work using an equivalent GPU-side dependency. If multiple {{GPUQueue/submit()}} calls write to the same current texture for a layer during a single {{XRFrame}}, this synchronization MUST include the last such submit before that texture is consumed by the [=XR Compositor=].
+Each [=WebGPU-backed layer=] has an associated <dfn>current color texture</dfn>, an optional
+<dfn>current depth-stencil texture</dfn>, a <dfn>current texture set</dfn>, and a
+<dfn>current texture frame</dfn>, all initially `null`. Each WebGPU-backed {{XRProjectionLayer}}
+also has an optional <dfn>current motion vector texture</dfn>, initially `null`. The current
+textures are {{GPUTexture}} objects that expose the backing resources of the layer's
+[=current texture set=] during its [=current texture frame=].
+
+The user agent MUST return the same current {{GPUTexture}} objects for every subimage of a layer
+within an [=XR animation frame=]. After that frame's animation frame callbacks have completed, the
+user agent MUST [=release the WebGPU textures=] for the layer. A retained {{XRGPUSubImage}} will
+therefore return destroyed textures after the frame in which it was obtained.
+
+Calling {{GPUTexture/destroy()}} on a [=current color texture=], [=current depth-stencil texture=],
+or [=current motion vector texture=] MUST terminate write access through that {{GPUTexture}}, but
+MUST NOT destroy or alter the [=WebGPU layer texture resource=] that backs it. The layer continues
+to reference the same destroyed {{GPUTexture}} until its current textures are expired. Consequently,
+subsequent subimage requests for the same layer in the same frame return the same destroyed texture.
 
 <script type=idl>
 [Exposed=(Window), SecureContext]
@@ -446,37 +238,46 @@ interface XRGPUSubImage : XRSubImage {
 
 ### Attributes ### {#xrgpusubimage-attributes}
 
-The <dfn attribute for="XRGPUSubImage">colorTexture</dfn> attribute returns the {{GPUTexture}} to be used as the color attachment when rendering this sub image. This texture is allocated by the user agent and its lifetime is managed by the layer's swap chain. The same {{GPUTexture}} object is returned for all sub images of the same layer within a single frame — use the result of {{XRGPUSubImage/getViewDescriptor()}} to determine which array layer of the texture to render to.
+The <dfn attribute for="XRGPUSubImage">colorTexture</dfn> attribute returns the {{GPUTexture}} to be used as the color attachment when rendering this sub image. Its backing resource is allocated and managed by the user agent. The same {{GPUTexture}} object is returned for all subimages of the same layer within a single frame. Use the result of {{XRGPUSubImage/getViewDescriptor()}} to determine which array layer of the texture to render to.
 
 The returned texture has the following properties:
 
- - **dimension**: `"2d"`
- - **format**: The {{XRGPUProjectionLayerInit/colorFormat}} specified during layer creation.
- - **size**: The width and height are determined by the [=recommended WebGPU texture resolution=], scaled by the {{XRGPUProjectionLayerInit/scaleFactor}}. The `depthOrArrayLayers` is equal to the number of views in the session (typically 2 for stereoscopic rendering).
- - **usage**: The {{XRGPUProjectionLayerInit/textureUsage}} flags specified during layer creation. The default value includes `GPUTextureUsage.RENDER_ATTACHMENT`; if overriding, developers must explicitly include `RENDER_ATTACHMENT` if it is needed.
- - **mipLevelCount**: 1
+ - **dimension**: The {{GPUTextureDescriptor/dimension}} of the layer's [=color texture descriptor=].
+ - **format**: The {{GPUTextureDescriptor/format}} of the layer's [=color texture descriptor=].
+ - **width**: The width component of the {{GPUTextureDescriptor/size}} of the layer's [=color texture descriptor=].
+ - **height**: The height component of the {{GPUTextureDescriptor/size}} of the layer's [=color texture descriptor=].
+ - **depthOrArrayLayers**: The depth or array layer count component of the {{GPUTextureDescriptor/size}} of the layer's [=color texture descriptor=].
+ - **usage**: The {{GPUTextureDescriptor/usage}} of the layer's [=color texture descriptor=].
+ - **mipLevelCount**: The {{GPUTextureDescriptor/mipLevelCount}} of the layer's [=color texture descriptor=].
+ - **sampleCount**: `1`.
 
-The <dfn attribute for="XRGPUSubImage">depthStencilTexture</dfn> attribute returns the {{GPUTexture}} to be used as the depth/stencil attachment when rendering this sub image, or `null` if no depth/stencil format was specified when creating the layer. When provided, the user agent MAY use the depth information to improve composition quality (for example, for reprojection).
-
-When present, the returned texture has the following properties:
-
- - **dimension**: `"2d"`
- - **format**: The {{XRGPUProjectionLayerInit/depthStencilFormat}} specified during layer creation.
- - **size**: For projection layers, the width and height are determined by the [=recommended WebGPU depth-stencil texture resolution=], scaled by the {{XRGPUProjectionLayerInit/scaleFactor}}. The `depthOrArrayLayers` is equal to the number of views in the session. For non-projection layers, the size is determined by the layer's initialization dictionary.
- - **usage**: The {{XRGPUProjectionLayerInit/textureUsage}} flags specified during layer creation. The default value includes `GPUTextureUsage.RENDER_ATTACHMENT`; if overriding, developers must explicitly include `RENDER_ATTACHMENT` if it is needed.
- - **mipLevelCount**: 1
-
-NOTE: If a {{XRGPUProjectionLayerInit/depthStencilFormat}} was provided during layer creation, it is implied that the author will populate it with an accurate representation of the scene's depth. If the depth information is not representative of the rendered scene, the user agent SHOULD allocate its own depth/stencil textures rather than use the layer-provided one.
-
-The <dfn attribute for="XRGPUSubImage">motionVectorTexture</dfn> attribute returns the {{GPUTexture}} to be used as the motion vector attachment when rendering this sub image, or `null` if the [=feature descriptor/space-warp=] [=feature descriptor=] was not enabled when the session was created or the layer is not an {{XRProjectionLayer}}.
+The <dfn attribute for="XRGPUSubImage">depthStencilTexture</dfn> attribute returns the {{GPUTexture}} containing the depth/stencil data for this sub image, or `null` if no depth/stencil format was specified when creating the layer. When this texture is present and the {{XRGPUSubImage/motionVectorTexture}} is `null`, it has the same dimensions as the {{XRGPUSubImage/colorTexture}} and can be used as the depth/stencil attachment in the render pass that renders to the color texture. When the motion vector texture is not `null`, the depth/stencil texture is also present, has the same dimensions as the motion vector texture, may have different dimensions than the color texture, and is rendered separately as described in [[#spacewarp]]. When provided, the user agent MAY use the depth information to improve composition quality (for example, for reprojection).
 
 When present, the returned texture has the following properties:
 
- - **dimension**: `"2d"`
- - **format**: `"rgba16float"`
- - **size**: The width and height are determined by the [=recommended WebGPU motion vector texture resolution=], scaled by the {{XRGPUProjectionLayerInit/scaleFactor}}. The `depthOrArrayLayers` is equal to the number of views in the session.
- - **usage**: The {{XRGPUProjectionLayerInit/textureUsage}} flags specified during layer creation. The default value includes `GPUTextureUsage.RENDER_ATTACHMENT`; if overriding, developers must explicitly include `RENDER_ATTACHMENT` if it is needed.
- - **mipLevelCount**: 1
+ - **dimension**: The {{GPUTextureDescriptor/dimension}} of the layer's [=depth-stencil texture descriptor=].
+ - **format**: The {{GPUTextureDescriptor/format}} of the layer's [=depth-stencil texture descriptor=].
+ - **width**: The width component of the {{GPUTextureDescriptor/size}} of the layer's [=depth-stencil texture descriptor=].
+ - **height**: The height component of the {{GPUTextureDescriptor/size}} of the layer's [=depth-stencil texture descriptor=].
+ - **depthOrArrayLayers**: The depth or array layer count component of the {{GPUTextureDescriptor/size}} of the layer's [=depth-stencil texture descriptor=].
+ - **usage**: The {{GPUTextureDescriptor/usage}} of the layer's [=depth-stencil texture descriptor=].
+ - **mipLevelCount**: The {{GPUTextureDescriptor/mipLevelCount}} of the layer's [=depth-stencil texture descriptor=].
+ - **sampleCount**: `1`.
+
+NOTE: If a {{XRGPUProjectionLayerInit/depthStencilFormat}} other than {{GPUTextureFormat/"stencil8"}} was provided during layer creation, it is implied that the author will populate it with an accurate representation of the scene's depth. If the depth information is not representative of the rendered scene, the user agent SHOULD allocate its own depth/stencil textures rather than use the layer-provided one.
+
+The <dfn attribute for="XRGPUSubImage">motionVectorTexture</dfn> attribute returns the {{GPUTexture}} to be used as the motion vector attachment when rendering this sub image. It returns `null` unless the layer is an {{XRProjectionLayer}}, the [=feature descriptor/space-warp=] [=feature descriptor=] was enabled when the session was created, and the layer was created with an {{XRGPUProjectionLayerInit/depthStencilFormat}} that is present and is not {{GPUTextureFormat/"stencil8"}}.
+
+When present, the returned texture has the following properties:
+
+ - **dimension**: The {{GPUTextureDescriptor/dimension}} of the layer's [=motion vector texture descriptor=].
+ - **format**: The {{GPUTextureDescriptor/format}} of the layer's [=motion vector texture descriptor=].
+ - **width**: The width component of the {{GPUTextureDescriptor/size}} of the layer's [=motion vector texture descriptor=].
+ - **height**: The height component of the {{GPUTextureDescriptor/size}} of the layer's [=motion vector texture descriptor=].
+ - **depthOrArrayLayers**: The depth or array layer count component of the {{GPUTextureDescriptor/size}} of the layer's [=motion vector texture descriptor=].
+ - **usage**: The {{GPUTextureDescriptor/usage}} of the layer's [=motion vector texture descriptor=].
+ - **mipLevelCount**: The {{GPUTextureDescriptor/mipLevelCount}} of the layer's [=motion vector texture descriptor=].
+ - **sampleCount**: `1`.
 
 ### getViewDescriptor ### {#xrgpusubimage-getviewdescriptor}
 
@@ -488,10 +289,15 @@ When invoked, the user agent MUST run the following steps:
  1. Set |descriptor|'s `dimension` to `"2d"`.
  1. Set |descriptor|'s `mipLevelCount` to 1.
  1. Set |descriptor|'s `arrayLayerCount` to 1.
- 1. Set |descriptor|'s `baseArrayLayer` to the array layer index corresponding to this sub image's view (e.g., 0 for the left eye, 1 for the right eye).
+ 1. Set |descriptor|'s `baseArrayLayer` to this {{XRGPUSubImage}}'s
+    [=XRGPUSubImage/array layer index=].
  1. Return |descriptor|.
 
-NOTE: The returned descriptor selects a single 2D slice from the texture array via `baseArrayLayer` paired with an `arrayLayerCount` of `1`. The viewport still needs to be applied via `setViewport()` on the render pass encoder.
+NOTE: The returned descriptor selects a single 2D slice from the texture array via `baseArrayLayer` paired with an `arrayLayerCount` of `1`. The viewport still needs to be applied via `setViewport()` when rendering to the color texture and, when the {{XRGPUSubImage/motionVectorTexture}} is `null`, when rendering to the depth/stencil texture. Depth/stencil and motion vector textures used for [=space warp=] are rendered to their full extent as described in [[#spacewarp]].
+
+NOTE: For an {{XRCubeLayer}}, the returned descriptor selects the first face for the requested eye.
+Authors can render the remaining faces by creating descriptors with `baseArrayLayer` increased by
+`1` through `5`, following the face order defined for {{XRGPUBinding/createCubeLayer()}}.
 
 <div class="example">
 Using the view descriptor to create render pass attachments:
@@ -505,7 +311,178 @@ Using the view descriptor to create render pass attachments:
   </pre>
 </div>
 
-# Layer Creation # {#layer-creation}
+# GPU Layer and View Creation # {#gpu-layer-and-view-creation}
+
+<span id="layer-creation"></span>
+
+This section defines the binding, initialization dictionaries, and algorithms used to create
+WebGPU-backed layers and access their per-frame texture views.
+
+<span id="webgpu-backed-layers"></span>
+
+## Texture allocation ## {#webgpu-texture-allocation}
+
+Each [=WebGPU-backed layer=] has an internal <dfn>color texture descriptor</dfn> and an optional
+<dfn>depth-stencil texture descriptor</dfn>. Each WebGPU-backed {{XRProjectionLayer}} also has an
+optional <dfn>motion vector texture descriptor</dfn>. These {{GPUTextureDescriptor}}s describe the
+textures used to render the layer.
+
+A <dfn>WebGPU layer texture resource</dfn> is GPU texture storage allocated by the user agent for a
+[=WebGPU-backed layer=] using the layer's [=XRCompositionLayer/WebGPU device=]. It is not itself a
+Web-exposed {{GPUTexture}}, but it can be exposed through a {{GPUTexture}} whose underlying storage
+points to the resource. Its allocation MUST be attributed to the {{GPUDevice}} and subject to the
+same resource limits as a texture created with {{GPUDevice/createTexture()}}.
+
+A <dfn>WebGPU layer texture set</dfn> is an internal tuple containing one color
+[=WebGPU layer texture resource=], an optional depth-stencil resource, and an optional motion vector
+resource. Each set has an <dfn for="WebGPU layer texture set">available</dfn> boolean. Each
+[=WebGPU-backed layer=] has an internal <dfn for="XRCompositionLayer">list of texture sets</dfn>.
+Until {{XRCompositionLayer/destroy()}} is invoked, the list's length is implementation-defined but
+MUST be greater than zero. The resources in every set MUST have the properties specified by their
+corresponding texture descriptors.
+
+If a [=WebGPU-backed layer=] has two or more {{XRCompositionLayer/mipLevels}}, the author SHOULD
+populate every mip level. The user agent MUST NOT generate the mip levels on the author's behalf.
+
+<div class="algorithm" data-algorithm="create an XR GPU texture descriptor">
+
+To <dfn>create an XR GPU texture descriptor</dfn> with an {{XRGPUBinding}} |binding|, positive
+integers |width|, |height|, |arrayLayerCount|, and |mipLevelCount|, a {{GPUTextureFormat}} |format|,
+and {{GPUTextureUsageFlags}} |usage|, the user agent MUST run the following steps:
+
+ 1. Let |descriptor| be a new {{GPUTextureDescriptor}} with the following members:
+    * {{GPUTextureDescriptor/size}} set to a {{GPUExtent3D}} whose width is |width|, height is |height|, and depth or array layer count is |arrayLayerCount|.
+    * {{GPUTextureDescriptor/mipLevelCount}} set to |mipLevelCount|.
+    * {{GPUTextureDescriptor/sampleCount}} set to `1`.
+    * {{GPUTextureDescriptor/dimension}} set to {{GPUTextureDimension/"2d"}}.
+    * {{GPUTextureDescriptor/format}} set to |format|.
+    * {{GPUTextureDescriptor/usage}} set to |usage|.
+    * {{GPUTextureDescriptor/viewFormats}} set to an empty sequence.
+ 1. If |descriptor| would not satisfy the validation requirements for
+    {{GPUDevice/createTexture()}} when invoked on |binding|'s [=XRGPUBinding/device=], throw a
+    {{NotSupportedError}} {{DOMException}}.
+ 1. Return |descriptor|.
+
+</div>
+
+<div class="algorithm" data-algorithm="allocate WebGPU layer texture sets">
+
+To <dfn>allocate WebGPU layer texture sets</dfn> with an {{XRGPUBinding}} |binding|, a
+{{GPUTextureDescriptor}} |colorDescriptor|, a nullable {{GPUTextureDescriptor}}
+|depthStencilDescriptor|, and a nullable {{GPUTextureDescriptor}} |motionVectorDescriptor|, the user
+agent MUST run the following steps:
+
+ 1. Let |textureSets| be a new empty [=/list=].
+ 1. Let |textureSetCount| be an implementation-defined positive integer sufficient to allow the
+    application and the [=XR Compositor=] to use different texture sets concurrently.
+ 1. Repeat |textureSetCount| times:
+    1. Let |textureSet| be a new [=WebGPU layer texture set=].
+    1. Allocate |textureSet|'s color resource using |binding|'s [=XRGPUBinding/device=] with the
+        storage properties described by |colorDescriptor|.
+    1. If |depthStencilDescriptor| is not `null`, allocate |textureSet|'s depth-stencil resource
+        using |binding|'s [=XRGPUBinding/device=] with the storage properties described by
+        |depthStencilDescriptor|. Otherwise, set its depth-stencil resource to `null`.
+    1. If |motionVectorDescriptor| is not `null`, allocate |textureSet|'s motion vector resource
+        using |binding|'s [=XRGPUBinding/device=] with the storage properties described by
+        |motionVectorDescriptor|. Otherwise, set its motion vector resource to `null`.
+    1. If the user agent was unable to allocate any resource for |textureSet|, release every
+        resource allocated by these steps and throw an {{OperationError}} {{DOMException}}.
+    1. Set |textureSet|'s [=WebGPU layer texture set/available=] boolean to `true`.
+    1. [=list/Append=] |textureSet| to |textureSets|.
+ 1. Return |textureSets|.
+
+</div>
+
+<div class="algorithm" data-algorithm="acquire WebGPU textures">
+
+To <dfn>acquire WebGPU textures</dfn> for a [=WebGPU-backed layer=] |layer| and an {{XRFrame}}
+|frame|, the user agent MUST run the following steps:
+
+ 1. Let |device| be |layer|'s [=XRCompositionLayer/WebGPU device=].
+ 1. If |device| has been [=destroyed=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |layer|'s [=XRCompositionLayer/list of texture sets=] is empty, throw an
+    {{InvalidStateError}} {{DOMException}}.
+ 1. If |layer|'s [=current texture set=] is not `null`:
+    1. Assert that |layer|'s [=current texture frame=] is |frame|.
+    1. Return.
+ 1. Let |textureSet| be an entry in |layer|'s [=XRCompositionLayer/list of texture sets=] whose
+    [=WebGPU layer texture set/available=] boolean is `true`.
+ 1. Assert that |textureSet| exists. The user agent MUST ensure that a texture set is available
+    before invoking the animation frame callbacks for |frame|.
+ 1. Set |textureSet|'s [=WebGPU layer texture set/available=] boolean to `false`.
+ 1. Set |layer|'s [=current texture set=] to |textureSet| and its [=current texture frame=] to
+    |frame|.
+ 1. Set |layer|'s [=current color texture=] to the result of calling
+    |device|.{{GPUDevice/createTexture()}} with |layer|'s [=color texture descriptor=], except with
+    the {{GPUTexture}}'s underlying storage pointing to |textureSet|'s color resource.
+ 1. If |layer|'s [=depth-stencil texture descriptor=] is not `null`, set |layer|'s
+    [=current depth-stencil texture=] to the result of calling
+    |device|.{{GPUDevice/createTexture()}} with that descriptor, except with the {{GPUTexture}}'s
+    underlying storage pointing to |textureSet|'s depth-stencil resource.
+ 1. If |layer| is an {{XRProjectionLayer}} and its [=motion vector texture descriptor=] is not
+    `null`, set |layer|'s [=current motion vector texture=] to the result of calling
+    |device|.{{GPUDevice/createTexture()}} with that descriptor, except with the {{GPUTexture}}'s
+    underlying storage pointing to |textureSet|'s motion vector resource.
+ 1. Clear every color and motion vector resource in |textureSet| to zero. Clear every depth
+    component in its depth-stencil resource to `1.0` and every stencil component to `0`.
+
+</div>
+
+<div class="algorithm" data-algorithm="expire WebGPU textures">
+
+To <dfn>expire the WebGPU textures</dfn> for a [=WebGPU-backed layer=] |layer|, the user agent MUST
+run the following steps:
+
+ 1. If |layer|'s [=current color texture=] is not `null`, call {{GPUTexture/destroy()}} on it
+    (without destroying the underlying storage) to terminate write access to the image.
+ 1. If |layer|'s [=current depth-stencil texture=] is not `null`, call {{GPUTexture/destroy()}} on
+    it (without destroying the underlying storage) to terminate write access to the image.
+ 1. If |layer| is an {{XRProjectionLayer}} and its [=current motion vector texture=] is not `null`,
+    call {{GPUTexture/destroy()}} on it (without destroying the underlying storage) to terminate
+    write access to the image.
+ 1. Set |layer|'s [=current color texture=] and [=current depth-stencil texture=] to `null`.
+ 1. If |layer| is an {{XRProjectionLayer}}, set its [=current motion vector texture=] to `null`.
+ 1. Set |layer|'s [=current texture set=] and [=current texture frame=] to `null`.
+
+</div>
+
+<div class="algorithm" data-algorithm="release WebGPU textures">
+
+To <dfn>release the WebGPU textures</dfn> for a [=WebGPU-backed layer=] |layer| and an {{XRFrame}}
+|frame|, the user agent MUST run the following steps:
+
+ 1. If |layer|'s [=current texture frame=] is not |frame|, return.
+ 1. Let |textureSet| be |layer|'s [=current texture set=].
+ 1. Before the [=XR Compositor=] consumes |textureSet|, ensure that all WebGPU work submitted during
+    the processing of |frame| that writes to the current textures has completed, or synchronize the
+    compositor with that work using an equivalent GPU-side dependency. If multiple
+    {{GPUQueue/submit()}} calls write to a current texture during |frame|, this synchronization MUST
+    include the last such submission.
+ 1. Make |textureSet|'s backing resources available to the [=XR Compositor=] for |frame|.
+ 1. Run [=expire the WebGPU textures=] for |layer|.
+ 1. Set |layer|'s {{XRCompositionLayer/needsRedraw}} to `false`.
+ 1. Once the [=XR Compositor=] no longer accesses |textureSet|'s backing resources, set
+    |textureSet|'s [=WebGPU layer texture set/available=] boolean to `true`.
+
+</div>
+
+<div class="algorithm" data-algorithm="destroy the resources for a WebGPU-backed layer">
+
+When the user agent is to [=destroy the resources for a layer=] with a [=WebGPU-backed layer=]
+|layer|, it MUST run the following steps instead of the WebXR Layers API's steps:
+
+ 1. Let |textureSets| be |layer|'s [=XRCompositionLayer/list of texture sets=].
+ 1. Run [=expire the WebGPU textures=] for |layer|.
+ 1. Set |layer|'s [=XRCompositionLayer/list of texture sets=] to an empty [=/list=].
+ 1. For each |textureSet| of |textureSets|, once neither previously submitted WebGPU work nor the
+    [=XR Compositor=] accesses its backing resources, release each non-null backing resource in
+    |textureSet|.
+
+</div>
+
+The [=XR animation frame=] algorithm is extended as follows: immediately before setting its
+[=XRFrame/active=] boolean to `false`, the user agent MUST [=release the WebGPU textures=] for every
+[=WebGPU-backed layer=] whose [=current texture frame=] is that {{XRFrame}}.
 
 ## Supported Texture Formats ## {#supported-texture-formats}
 
@@ -524,7 +501,9 @@ The <dfn export lt="supported depth-stencil format">supported depth/stencil form
  - `"depth32float"`
  - `"depth32float-stencil8"`
 
-NOTE: The formats listed above are the only formats that MUST be accepted for layer creation. User agents MUST NOT accept formats outside of these lists.
+The formats listed above are the only formats that can be used for layer creation. User agents MUST
+NOT accept formats outside of these lists. A listed format can still be rejected when it does not
+satisfy the WebGPU feature or usage requirements of the [=XRGPUBinding/device=].
 
 ## XRGPUProjectionLayerInit ## {#xrgpuprojectionlayerinit}
 
@@ -552,13 +531,11 @@ Creating a projection layer with the preferred color format:
 
 The <dfn dict-member for="XRGPUProjectionLayerInit">colorFormat</dfn> member specifies the {{GPUTextureFormat}} for the layer's color textures. This MUST be a [=supported color format=].
 
-The <dfn dict-member for="XRGPUProjectionLayerInit">depthStencilFormat</dfn> member, when present, specifies the {{GPUTextureFormat}} for the layer's depth/stencil textures. This MUST be a [=supported depth-stencil format=]. When not present, no depth/stencil texture is allocated.
+The <dfn dict-member for="XRGPUProjectionLayerInit">depthStencilFormat</dfn> member, when present, specifies the {{GPUTextureFormat}} for the layer's depth/stencil textures. This MUST be a [=supported depth-stencil format=]. When not present, no depth/stencil texture is allocated. A motion vector texture is allocated only when the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled and this member is present and is not {{GPUTextureFormat/"stencil8"}}.
 
 The <dfn dict-member for="XRGPUProjectionLayerInit">textureUsage</dfn> member specifies the {{GPUTextureUsageFlags}} to be set on the allocated textures. The default value is `GPUTextureUsage.RENDER_ATTACHMENT`. If overriding this value, developers MUST explicitly include `RENDER_ATTACHMENT` if they intend to use the textures as render attachments.
 
 The <dfn dict-member for="XRGPUProjectionLayerInit">scaleFactor</dfn> member specifies a scale factor to apply to the [=recommended WebGPU texture resolution=]. A value of `1.0` uses the recommended resolution; values less than `1.0` reduce quality for improved performance; values greater than `1.0` increase quality at the cost of performance. The value is clamped to the range [0.2, max({{XRGPUBinding/nativeProjectionScaleFactor}}, 1.0)].
-
-<div class="unstable">
 
 ## XRGPULayerInit ## {#xrgpulayerinit}
 
@@ -578,23 +555,23 @@ dictionary XRGPULayerInit {
 };
 </script>
 
-The <dfn dict-member for="XRGPULayerInit">colorFormat</dfn> member specifies the {{GPUTextureFormat}} for the layer's color textures.
+The <dfn dict-member for="XRGPULayerInit">colorFormat</dfn> member specifies the {{GPUTextureFormat}} for the layer's color textures. This MUST be a [=supported color format=].
 
-The <dfn dict-member for="XRGPULayerInit">depthStencilFormat</dfn> member, when present, specifies the {{GPUTextureFormat}} for the layer's depth/stencil textures.
+The <dfn dict-member for="XRGPULayerInit">depthStencilFormat</dfn> member, when present, specifies the {{GPUTextureFormat}} for the layer's depth/stencil textures. This MUST be a [=supported depth-stencil format=]. When not present, no depth/stencil texture is allocated.
 
-The <dfn dict-member for="XRGPULayerInit">textureUsage</dfn> member specifies additional {{GPUTextureUsageFlags}} for the allocated textures.
+The <dfn dict-member for="XRGPULayerInit">textureUsage</dfn> member specifies the {{GPUTextureUsageFlags}} for the allocated textures. The default value is `GPUTextureUsage.RENDER_ATTACHMENT`.
 
 The <dfn dict-member for="XRGPULayerInit">space</dfn> member specifies the {{XRSpace}} in which the layer is positioned.
 
-The <dfn dict-member for="XRGPULayerInit">mipLevels</dfn> member specifies the number of mip levels to allocate for the layer's textures.
+The <dfn dict-member for="XRGPULayerInit">mipLevels</dfn> member specifies the desired number of mip levels for the layer's textures. The actual number is returned by {{XRCompositionLayer/mipLevels}} and can be lower than the requested value.
 
 The <dfn dict-member for="XRGPULayerInit">viewPixelWidth</dfn> member specifies the width, in pixels, of each view's texture.
 
 The <dfn dict-member for="XRGPULayerInit">viewPixelHeight</dfn> member specifies the height, in pixels, of each view's texture.
 
-The <dfn dict-member for="XRGPULayerInit">layout</dfn> member specifies the {{XRLayerLayout}} of the layer.
+The <dfn dict-member for="XRGPULayerInit">layout</dfn> member specifies the {{XRLayerLayout}} of the layer. {{XRLayerLayout/"default"}} is not valid for non-projection layers created by an {{XRGPUBinding}}.
 
-The <dfn dict-member for="XRGPULayerInit">isStatic</dfn> member, when set to `true`, indicates that the layer's content will rarely change. This allows the user agent to optimize for this scenario.
+The <dfn dict-member for="XRGPULayerInit">isStatic</dfn> member, when set to `true`, indicates that the author will only draw to the layer when {{XRCompositionLayer/needsRedraw}} is `true`. This allows the user agent to optimize for this scenario.
 
 ## XRGPUQuadLayerInit ## {#xrgpuquadlayerinit}
 
@@ -663,6 +640,568 @@ dictionary XRGPUCubeLayerInit : XRGPULayerInit {
 
 The <dfn dict-member for="XRGPUCubeLayerInit">orientation</dfn> member specifies the initial orientation of the cube layer as a quaternion.
 
+For cube layers, {{XRGPULayerInit/viewPixelWidth}} and {{XRGPULayerInit/viewPixelHeight}} specify the
+dimensions of each cube face and MUST be equal.
+
+## XRGPUBinding ## {#xrgpubinding-interface}
+
+The {{XRGPUBinding}} interface is the entry point for using WebGPU with a [=WebGPU-compatible session=]. It provides methods for creating WebGPU-backed {{XRCompositionLayer}}s and obtaining {{XRGPUSubImage}}s for rendering.
+
+<script type=idl>
+[Exposed=(Window), SecureContext]
+interface XRGPUBinding {
+  constructor(XRSession session, GPUDevice device);
+
+  readonly attribute double nativeProjectionScaleFactor;
+  readonly attribute boolean usesDepthValues;
+
+  XRProjectionLayer createProjectionLayer(optional XRGPUProjectionLayerInit init = {});
+  XRQuadLayer createQuadLayer(optional XRGPUQuadLayerInit init = {});
+  XRCylinderLayer createCylinderLayer(optional XRGPUCylinderLayerInit init = {});
+  XREquirectLayer createEquirectLayer(optional XRGPUEquirectLayerInit init = {});
+  XRCubeLayer createCubeLayer(optional XRGPUCubeLayerInit init = {});
+
+  XRGPUSubImage getSubImage(XRCompositionLayer layer, XRFrame frame, optional XREye eye = "none");
+  XRGPUSubImage getViewSubImage(XRProjectionLayer layer, XRView view);
+
+  GPUTextureFormat getPreferredColorFormat();
+};
+</script>
+
+Each {{XRGPUBinding}} has an associated <dfn for="XRGPUBinding">session</dfn> which is the {{XRSession}} it was created with, and an associated <dfn for="XRGPUBinding">device</dfn> which is the {{GPUDevice}} it was created with.
+
+NOTE: A [=WebGPU-backed layer=] can be used with any {{XRGPUBinding}} that has the same
+[=XRGPUBinding/session=] and [=XRGPUBinding/device=] as the binding that created the layer.
+
+<span id="xrgpubinding-constructor"></span>
+
+<div class="algorithm" data-algorithm="construct XRGPUBinding">
+
+The <dfn constructor for="XRGPUBinding">XRGPUBinding(|session|, |device|)</dfn> constructor MUST perform the following steps when invoked:
+
+ 1. If |session|'s [=ended=] value is `true`, throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |session| is NOT a [=WebGPU-compatible session=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |device| has been [=destroyed=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |device| was NOT created from an [=XR-compatible adapter=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. Let |binding| be a new {{XRGPUBinding}}.
+ 1. Set |binding|'s [=XRGPUBinding/session=] to |session|.
+ 1. Set |binding|'s [=XRGPUBinding/device=] to |device|.
+ 1. Return |binding|.
+
+</div>
+
+<div class="example">
+Creating an {{XRGPUBinding}}:
+
+  <pre highlight="js">
+    const adapter = await navigator.gpu.requestAdapter({ xrCompatible: true });
+    const device = await adapter.requestDevice();
+    const binding = new XRGPUBinding(session, device);
+  </pre>
+</div>
+
+<span id="xrgpubinding-attributes"></span>
+
+The <dfn attribute for="XRGPUBinding">nativeProjectionScaleFactor</dfn> attribute returns the scale factor that, when applied to the [=recommended WebGPU texture resolution=], would result in a 1:1 texel-to-pixel ratio at the center of the user's view. This value MAY change over the lifetime of the session.
+
+The <dfn attribute for="XRGPUBinding">usesDepthValues</dfn> attribute, if `false`, indicates that the [=XR Compositor=] MUST NOT make use of values in a depth/stencil texture. When the attribute is `true`, it indicates that the contents of the depth/stencil texture will be used by the [=XR Compositor=] and are expected to be representative of the scene rendered into the layer. If the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, this attribute MUST return `true`.
+
+<span id="recommended-texture-resolution"></span>
+
+Each [=XR device=] has a <dfn export>recommended WebGPU texture resolution</dfn>, which represents the per-view dimensions that the user agent considers a good balance between rendering quality and performance for that device. The recommended resolution is determined by taking the maximum width and height across all of the session's views, scaled by a user agent-defined default scale factor.
+
+NOTE: Unlike the recommended WebGL framebuffer resolution defined in the WebXR spec, which concatenates views side-by-side into a single framebuffer, the recommended WebGPU texture resolution describes the size of a single view. When creating projection layers, the user agent allocates a texture array where each layer corresponds to one view, with each layer having the recommended resolution.
+
+Each [=XR device=] has a <dfn export>recommended WebGPU depth-stencil texture resolution</dfn>, which represents the per-view dimensions that the user agent considers sufficient for depth/stencil textures used by the [=XR Compositor=]. Unless the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, this resolution MUST be equal to the [=recommended WebGPU texture resolution=].
+
+If the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, each [=XR device=] MUST have a <dfn export>recommended WebGPU motion vector texture resolution</dfn>, which represents the per-view dimensions that the user agent considers sufficient for motion vector textures used by [=space warp=]. When the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, the [=recommended WebGPU depth-stencil texture resolution=] MUST be equal to the [=recommended WebGPU motion vector texture resolution=].
+
+The {{XRGPUBinding/nativeProjectionScaleFactor}} attribute can be used to determine the scale factor needed to achieve the native 1:1 resolution. A {{XRGPUProjectionLayerInit/scaleFactor}} of `1.0` in {{XRGPUBinding/createProjectionLayer()}} uses the recommended resolution directly.
+
+<span id="xrgpubinding-getpreferredcolorformat"></span>
+
+<div class="algorithm" data-algorithm="getPreferredColorFormat">
+
+The <dfn method for="XRGPUBinding">getPreferredColorFormat()</dfn> method returns the {{GPUTextureFormat}} that the user agent recommends for the color attachments of layers created with this binding.
+
+When invoked, the user agent MUST return the preferred {{GPUTextureFormat}} for the session's [=XR device=].
+
+</div>
+
+NOTE: The preferred color format is typically `"rgba8unorm"` or `"bgra8unorm"` depending on the platform. The preferred format for WebXR may differ from the format reported by `navigator.gpu.getPreferredCanvasFormat()`. Authors SHOULD use this method rather than `getPreferredCanvasFormat()` to determine the format for their XR projection layers.
+
+<div class="algorithm" data-algorithm="scale an XR GPU texture size">
+
+To <dfn>scale an XR GPU texture size</dfn> |recommendedSize| by a double |scaleFactor| for a
+{{GPUDevice}} |device|, the user agent MUST run the following steps:
+
+ 1. Let |width| be max(1, floor(|recommendedSize|'s width multiplied by |scaleFactor|)).
+ 1. Let |height| be max(1, floor(|recommendedSize|'s height multiplied by |scaleFactor|)).
+ 1. Let |maxDimension| be |device|'s {{GPUDevice/limits}}.{{GPUSupportedLimits/maxTextureDimension2D}}.
+ 1. If |width| or |height| is greater than |maxDimension|:
+    1. Let |limitScale| be min(|maxDimension| divided by |width|, |maxDimension| divided by |height|).
+    1. Set |width| to max(1, floor(|width| multiplied by |limitScale|)).
+    1. Set |height| to max(1, floor(|height| multiplied by |limitScale|)).
+ 1. Return (|width|, |height|).
+
+</div>
+
+<span id="xrgpubinding-createprojectionlayer"></span>
+
+<div class="algorithm" data-algorithm="createProjectionLayer">
+
+The <dfn method for="XRGPUBinding">createProjectionLayer(|init|)</dfn> method creates a new
+{{XRProjectionLayer}} backed by WebGPU textures.
+
+When this method is invoked on an {{XRGPUBinding}} |binding|, the user agent MUST run the following
+steps:
+
+ 1. Let |session| be |binding|'s [=XRGPUBinding/session=].
+ 1. Let |device| be |binding|'s [=XRGPUBinding/device=].
+ 1. If |session| has [=ended=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |device| has been [=destroyed=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |init|'s {{XRGPUProjectionLayerInit/colorFormat}} is not a [=supported color format=], throw a
+    {{NotSupportedError}} {{DOMException}}.
+ 1. If |init|'s {{XRGPUProjectionLayerInit/depthStencilFormat}} is present and is not a
+    [=supported depth-stencil format=], throw a {{NotSupportedError}} {{DOMException}}.
+ 1. Let |hasDepthAspect| be `true` if |init|'s
+    {{XRGPUProjectionLayerInit/depthStencilFormat}} is present and is not
+    {{GPUTextureFormat/"stencil8"}}; otherwise `false`.
+ 1. Let |useSpaceWarp| be `true` if |hasDepthAspect| is `true` and |session| was created with the
+    [=feature descriptor/space-warp=] [=feature descriptor=]; otherwise `false`.
+ 1. Let |scaleFactor| be |init|'s {{XRGPUProjectionLayerInit/scaleFactor}}, clamped to the range
+    [0.2, max(|binding|'s {{XRGPUBinding/nativeProjectionScaleFactor}}, 1.0)].
+ 1. Let (|colorWidth|, |colorHeight|) be the result of [=scale an XR GPU texture size|scaling an XR
+    GPU texture size=] of the [=recommended WebGPU texture resolution=] by |scaleFactor| for
+    |device|.
+ 1. Initialize |depthWidth| to |colorWidth| and |depthHeight| to |colorHeight|.
+ 1. If |useSpaceWarp| is `true`:
+    1. Let (|spaceWarpWidth|, |spaceWarpHeight|) be the result of [=scale an XR GPU texture
+        size|scaling an XR GPU texture size=] of the [=recommended WebGPU depth-stencil texture
+        resolution=] by |scaleFactor| for |device|.
+    1. Set |depthWidth| to |spaceWarpWidth| and |depthHeight| to |spaceWarpHeight|.
+ 1. Let |arrayLayerCount| be the number of entries in |session|'s [=list of views=].
+ 1. Let |colorDescriptor| be the result of [=create an XR GPU texture descriptor|creating an XR GPU
+    texture descriptor=] with |binding|, |colorWidth|, |colorHeight|, |arrayLayerCount|, `1`,
+    |init|'s {{XRGPUProjectionLayerInit/colorFormat}}, and |init|'s
+    {{XRGPUProjectionLayerInit/textureUsage}}.
+ 1. Initialize |depthStencilDescriptor| to `null`.
+ 1. If |init|'s {{XRGPUProjectionLayerInit/depthStencilFormat}} is present, set
+    |depthStencilDescriptor| to the result of [=create an XR GPU texture descriptor|creating an XR
+    GPU texture descriptor=] with |binding|, |depthWidth|, |depthHeight|, |arrayLayerCount|, `1`,
+    |init|'s {{XRGPUProjectionLayerInit/depthStencilFormat}}, and |init|'s
+    {{XRGPUProjectionLayerInit/textureUsage}}.
+ 1. Initialize |motionVectorDescriptor| to `null`.
+ 1. If |useSpaceWarp| is `true`:
+    1. Set |motionVectorDescriptor| to the result of [=create an XR GPU texture descriptor|creating
+        an XR GPU texture descriptor=] with |binding|, |depthWidth|, |depthHeight|,
+        |arrayLayerCount|, `1`, {{GPUTextureFormat/"rgba16float"}}, and |init|'s
+        {{XRGPUProjectionLayerInit/textureUsage}}.
+ 1. Let |layer| be a new {{XRProjectionLayer}} in the [=relevant realm=] of |binding|.
+ 1. Run [=initialize a composition layer=] on |layer| with |session|.
+ 1. Set |layer|'s [=XRCompositionLayer/WebGPU device=] to |device|.
+ 1. Set |layer|'s {{XRCompositionLayer/layout}} to {{XRLayerLayout/"default"}}.
+ 1. Set |layer|'s [=XRCompositionLayer/isStatic=] to `false`.
+ 1. Set |layer|'s {{XRCompositionLayer/needsRedraw}} to `true`.
+ 1. Set |layer|'s {{XRCompositionLayer/mipLevels}} to `1`.
+ 1. Set |layer|'s {{XRProjectionLayer/textureWidth}} to |colorWidth|.
+ 1. Set |layer|'s {{XRProjectionLayer/textureHeight}} to |colorHeight|.
+ 1. Set |layer|'s {{XRProjectionLayer/textureArrayLength}} to |arrayLayerCount|.
+ 1. If |motionVectorDescriptor| is not `null`, set |layer|'s
+    {{XRProjectionLayer/ignoreDepthValues}} to `false`.
+ 1. Otherwise, if |hasDepthAspect| is `true` and |binding|'s
+    {{XRGPUBinding/usesDepthValues}} is `true`, set |layer|'s
+    {{XRProjectionLayer/ignoreDepthValues}} to `false`.
+ 1. Otherwise, set |layer|'s {{XRProjectionLayer/ignoreDepthValues}} to `true`.
+ 1. If fixed foveation is supported, set |layer|'s {{XRProjectionLayer/fixedFoveation}} to `0`.
+    Otherwise, set it to `null`.
+ 1. Set |layer|'s {{XRProjectionLayer/deltaPose}} to `null`.
+ 1. Set |layer|'s [=color texture descriptor=] to |colorDescriptor|.
+ 1. Set |layer|'s [=depth-stencil texture descriptor=] to |depthStencilDescriptor|.
+ 1. Set |layer|'s [=motion vector texture descriptor=] to |motionVectorDescriptor|.
+ 1. Set |layer|'s [=XRCompositionLayer/list of texture sets=] to the result of
+    [=allocate WebGPU layer texture sets|allocating WebGPU layer texture sets=] with |binding|,
+    |colorDescriptor|, |depthStencilDescriptor|, and |motionVectorDescriptor|.
+ 1. Set |layer|'s [=current color texture=], [=current depth-stencil texture=],
+    [=current motion vector texture=], [=current texture set=], and [=current texture frame=] to
+    `null`.
+ 1. Return |layer|.
+
+</div>
+
+<div class="example">
+Creating a projection layer with color and depth and making it the active layer for the session:
+
+  <pre highlight="js">
+    const layer = binding.createProjectionLayer({
+      colorFormat: binding.getPreferredColorFormat(),
+      depthStencilFormat: 'depth24plus',
+    });
+    session.updateRenderState({ layers: [layer] });
+  </pre>
+</div>
+
+<span id="non-projection-layer-allocation"></span>
+
+<div class="algorithm" data-algorithm="validate WebGPU layer creation">
+
+To <dfn>validate WebGPU layer creation</dfn> with an {{XRGPUBinding}} |binding|, the user agent MUST
+run the following steps:
+
+ 1. If |binding|'s [=XRGPUBinding/session=] has [=ended=], throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. If |binding|'s [=XRGPUBinding/device=] has been [=destroyed=], throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. If the [=feature descriptor/layers=] [=feature descriptor=] is not enabled for |binding|'s
+    [=XRGPUBinding/session=], throw a {{NotSupportedError}} {{DOMException}}.
+
+</div>
+
+<div class="algorithm" data-algorithm="determine a WebGPU layer texture layout">
+
+To <dfn>determine a WebGPU layer texture layout</dfn> from an {{XRGPULayerInit}} |init|, the user
+agent MUST run the following steps:
+
+ 1. Let |width| be |init|'s {{XRGPULayerInit/viewPixelWidth}}.
+ 1. Let |height| be |init|'s {{XRGPULayerInit/viewPixelHeight}}.
+ 1. Let |arrayLayerCount| be `1`.
+ 1. Switch on |init|'s {{XRGPULayerInit/layout}}:
+    <dl class="switch">
+      <dt>{{XRLayerLayout/"mono"}}</dt>
+      <dd>Do nothing.</dd>
+      <dt>{{XRLayerLayout/"stereo"}}</dt>
+      <dd>Set |arrayLayerCount| to `2`.</dd>
+      <dt>{{XRLayerLayout/"stereo-left-right"}}</dt>
+      <dd>Set |width| to |width| multiplied by `2`.</dd>
+      <dt>{{XRLayerLayout/"stereo-top-bottom"}}</dt>
+      <dd>Set |height| to |height| multiplied by `2`.</dd>
+      <dt>{{XRLayerLayout/"default"}}</dt>
+      <dd>Throw a {{TypeError}}.</dd>
+    </dl>
+ 1. Return (|width|, |height|, |arrayLayerCount|).
+
+</div>
+
+<div class="algorithm" data-algorithm="initialize a WebGPU-backed layer">
+
+To <dfn>initialize a WebGPU-backed layer</dfn> |layer| with an {{XRGPUBinding}} |binding|, an
+{{XRGPULayerInit}} |init|, non-negative integers |width| and |height|, and a positive integer
+|arrayLayerCount|, the user agent MUST run the following steps:
+
+ 1. Let |session| be |binding|'s [=XRGPUBinding/session=].
+ 1. If |width| or |height| is `0`, throw a {{TypeError}}.
+ 1. If |init|'s {{XRGPULayerInit/colorFormat}} is not a [=supported color format=], throw a
+    {{NotSupportedError}} {{DOMException}}.
+ 1. If |init|'s {{XRGPULayerInit/depthStencilFormat}} is present and is not a
+    [=supported depth-stencil format=], throw a {{NotSupportedError}} {{DOMException}}.
+ 1. If |init|'s {{XRGPULayerInit/mipLevels}} is less than `1`, throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. Let |maximumMipLevelCount| be floor(log<sub>2</sub>(max(|width|, |height|))) + 1.
+ 1. Let |mipLevelCount| be min(|init|'s {{XRGPULayerInit/mipLevels}}, |maximumMipLevelCount|).
+    The user agent MAY reduce |mipLevelCount| further if it cannot support the requested number of
+    mip levels, but it MUST NOT reduce it below `1`.
+ 1. Let |colorDescriptor| be the result of [=create an XR GPU texture descriptor|creating an XR GPU
+    texture descriptor=] with |binding|, |width|, |height|, |arrayLayerCount|, |mipLevelCount|,
+    |init|'s {{XRGPULayerInit/colorFormat}}, and |init|'s {{XRGPULayerInit/textureUsage}}.
+ 1. Initialize |depthStencilDescriptor| to `null`.
+ 1. If |init|'s {{XRGPULayerInit/depthStencilFormat}} is present, set |depthStencilDescriptor| to
+    the result of [=create an XR GPU texture descriptor|creating an XR GPU texture descriptor=]
+    with |binding|, |width|, |height|, |arrayLayerCount|, |mipLevelCount|, |init|'s
+    {{XRGPULayerInit/depthStencilFormat}}, and |init|'s {{XRGPULayerInit/textureUsage}}.
+ 1. Run [=initialize a composition layer=] on |layer| with |session|.
+ 1. Run [=setting the space on a layer=] with |init|'s {{XRGPULayerInit/space}} and |layer|.
+ 1. Set |layer|'s [=XRCompositionLayer/WebGPU device=] to |binding|'s
+    [=XRGPUBinding/device=].
+ 1. Set |layer|'s {{XRCompositionLayer/layout}} to |init|'s {{XRGPULayerInit/layout}}.
+ 1. Set |layer|'s [=XRCompositionLayer/isStatic=] to |init|'s {{XRGPULayerInit/isStatic}}.
+ 1. Set |layer|'s {{XRCompositionLayer/mipLevels}} to |mipLevelCount|.
+ 1. Set |layer|'s {{XRCompositionLayer/needsRedraw}} to `true`.
+ 1. Set |layer|'s [=color texture descriptor=] to |colorDescriptor|.
+ 1. Set |layer|'s [=depth-stencil texture descriptor=] to |depthStencilDescriptor|.
+ 1. Set |layer|'s [=XRCompositionLayer/list of texture sets=] to the result of
+    [=allocate WebGPU layer texture sets|allocating WebGPU layer texture sets=] with |binding|,
+    |colorDescriptor|, |depthStencilDescriptor|, and `null`.
+ 1. Set |layer|'s [=current color texture=], [=current depth-stencil texture=],
+    [=current texture set=], and [=current texture frame=] to `null`.
+
+</div>
+
+<span id="xrgpubinding-createotherlayers"></span>
+
+<span id="xrgpubinding-createquadlayer"></span>
+
+<div class="algorithm" data-algorithm="createQuadLayer">
+
+The <dfn method for="XRGPUBinding">createQuadLayer(|init|)</dfn> method creates a new
+{{XRQuadLayer}} backed by WebGPU textures.
+
+When this method is invoked on an {{XRGPUBinding}} |binding|, the user agent MUST run the following
+steps:
+
+ 1. Run [=validate WebGPU layer creation=] with |binding|.
+ 1. Let (|width|, |height|, |arrayLayerCount|) be the result of [=determine a WebGPU layer texture
+    layout|determining a WebGPU layer texture layout=] from |init|.
+ 1. Let |layer| be a new {{XRQuadLayer}} in the [=relevant realm=] of |binding|.
+ 1. Run [=initialize a WebGPU-backed layer=] with |layer|, |binding|, |init|, |width|, |height|, and
+    |arrayLayerCount|.
+ 1. Set |layer|'s {{XRQuadLayer/space}} to |init|'s {{XRGPULayerInit/space}}.
+ 1. If |init|'s {{XRGPUQuadLayerInit/transform}} is present, set |layer|'s
+    {{XRQuadLayer/transform}} to a new {{XRRigidTransform}} in |layer|'s [=relevant realm=],
+    initialized with the position and orientation of |init|'s {{XRGPUQuadLayerInit/transform}}.
+    Otherwise, set it to a new identity {{XRRigidTransform}} in |layer|'s [=relevant realm=].
+ 1. Set |layer|'s {{XRQuadLayer/width}} to |init|'s {{XRGPUQuadLayerInit/width}}.
+ 1. Set |layer|'s {{XRQuadLayer/height}} to |init|'s {{XRGPUQuadLayerInit/height}}.
+ 1. Return |layer|.
+
+</div>
+
+<span id="xrgpubinding-createcylinderlayer"></span>
+
+<div class="algorithm" data-algorithm="createCylinderLayer">
+
+The <dfn method for="XRGPUBinding">createCylinderLayer(|init|)</dfn> method creates a new
+{{XRCylinderLayer}} backed by WebGPU textures.
+
+When this method is invoked on an {{XRGPUBinding}} |binding|, the user agent MUST run the following
+steps:
+
+ 1. Run [=validate WebGPU layer creation=] with |binding|.
+ 1. Let (|width|, |height|, |arrayLayerCount|) be the result of [=determine a WebGPU layer texture
+    layout|determining a WebGPU layer texture layout=] from |init|.
+ 1. Let |layer| be a new {{XRCylinderLayer}} in the [=relevant realm=] of |binding|.
+ 1. Run [=initialize a WebGPU-backed layer=] with |layer|, |binding|, |init|, |width|, |height|, and
+    |arrayLayerCount|.
+ 1. Set |layer|'s {{XRCylinderLayer/space}} to |init|'s {{XRGPULayerInit/space}}.
+ 1. If |init|'s {{XRGPUCylinderLayerInit/transform}} is present, set |layer|'s
+    {{XRCylinderLayer/transform}} to a new {{XRRigidTransform}} in |layer|'s [=relevant realm=],
+    initialized with the position and orientation of |init|'s
+    {{XRGPUCylinderLayerInit/transform}}. Otherwise, set it to a new identity
+    {{XRRigidTransform}} in |layer|'s [=relevant realm=].
+ 1. Set |layer|'s {{XRCylinderLayer/radius}} to |init|'s {{XRGPUCylinderLayerInit/radius}}.
+ 1. Set |layer|'s {{XRCylinderLayer/centralAngle}} to |init|'s
+    {{XRGPUCylinderLayerInit/centralAngle}}.
+ 1. Set |layer|'s {{XRCylinderLayer/aspectRatio}} to |init|'s
+    {{XRGPUCylinderLayerInit/aspectRatio}}.
+ 1. Return |layer|.
+
+</div>
+
+NOTE: The <a href="https://immersive-web.github.io/layers/#spaces">WebXR Layers space
+requirements</a> allow {{XRQuadLayer}} and {{XRCylinderLayer}} to use any {{XRSpace}}, including
+{{XRReferenceSpaceType/"viewer"}} for head-locked content. {{XREquirectLayer}} and {{XRCubeLayer}}
+are restricted to {{XRReferenceSpace}} values other than {{XRReferenceSpaceType/"viewer"}} so that
+environment content, such as 360-degree media and skyboxes, preserves rotational reprojection.
+
+<span id="xrgpubinding-createequirectlayer"></span>
+
+<div class="algorithm" data-algorithm="createEquirectLayer">
+
+The <dfn method for="XRGPUBinding">createEquirectLayer(|init|)</dfn> method creates a new
+{{XREquirectLayer}} backed by WebGPU textures.
+
+When this method is invoked on an {{XRGPUBinding}} |binding|, the user agent MUST run the following
+steps:
+
+ 1. Run [=validate WebGPU layer creation=] with |binding|.
+ 1. If |init|'s {{XRGPULayerInit/space}} is not an {{XRReferenceSpace}}, throw a {{TypeError}}.
+ 1. If |init|'s {{XRGPULayerInit/space}} has a [=XRReferenceSpace/type=] of
+    {{XRReferenceSpaceType/"viewer"}}, throw a {{TypeError}}.
+ 1. Let (|width|, |height|, |arrayLayerCount|) be the result of [=determine a WebGPU layer texture
+    layout|determining a WebGPU layer texture layout=] from |init|.
+ 1. Let |layer| be a new {{XREquirectLayer}} in the [=relevant realm=] of |binding|.
+ 1. Run [=initialize a WebGPU-backed layer=] with |layer|, |binding|, |init|, |width|, |height|, and
+    |arrayLayerCount|.
+ 1. Set |layer|'s {{XREquirectLayer/space}} to |init|'s {{XRGPULayerInit/space}}.
+ 1. If |init|'s {{XRGPUEquirectLayerInit/transform}} is present, set |layer|'s
+    {{XREquirectLayer/transform}} to a new {{XRRigidTransform}} in |layer|'s [=relevant realm=],
+    initialized with the position and orientation of |init|'s
+    {{XRGPUEquirectLayerInit/transform}}. Otherwise, set it to a new identity
+    {{XRRigidTransform}} in |layer|'s [=relevant realm=].
+ 1. Set |layer|'s {{XREquirectLayer/radius}} to |init|'s {{XRGPUEquirectLayerInit/radius}}.
+ 1. Set |layer|'s {{XREquirectLayer/centralHorizontalAngle}} to |init|'s
+    {{XRGPUEquirectLayerInit/centralHorizontalAngle}}.
+ 1. Set |layer|'s {{XREquirectLayer/upperVerticalAngle}} to |init|'s
+    {{XRGPUEquirectLayerInit/upperVerticalAngle}}.
+ 1. Set |layer|'s {{XREquirectLayer/lowerVerticalAngle}} to |init|'s
+    {{XRGPUEquirectLayerInit/lowerVerticalAngle}}.
+ 1. Return |layer|.
+
+</div>
+
+<span id="xrgpubinding-createcubelayer"></span>
+
+<div class="algorithm" data-algorithm="createCubeLayer">
+
+The <dfn method for="XRGPUBinding">createCubeLayer(|init|)</dfn> method creates a new
+{{XRCubeLayer}} backed by WebGPU textures.
+
+When this method is invoked on an {{XRGPUBinding}} |binding|, the user agent MUST run the following
+steps:
+
+ 1. Run [=validate WebGPU layer creation=] with |binding|.
+ 1. If |init|'s {{XRGPULayerInit/space}} is not an {{XRReferenceSpace}}, throw a {{TypeError}}.
+ 1. If |init|'s {{XRGPULayerInit/space}} has a [=XRReferenceSpace/type=] of
+    {{XRReferenceSpaceType/"viewer"}}, throw a {{TypeError}}.
+ 1. If |init|'s {{XRGPULayerInit/layout}} is not {{XRLayerLayout/"mono"}} or
+    {{XRLayerLayout/"stereo"}}, throw a {{TypeError}}.
+ 1. If |init|'s {{XRGPULayerInit/viewPixelWidth}} is not equal to |init|'s
+    {{XRGPULayerInit/viewPixelHeight}}, throw a {{TypeError}}.
+ 1. Let |arrayLayerCount| be `6` if |init|'s {{XRGPULayerInit/layout}} is
+    {{XRLayerLayout/"mono"}}, and `12` otherwise.
+ 1. Let |layer| be a new {{XRCubeLayer}} in the [=relevant realm=] of |binding|.
+ 1. Run [=initialize a WebGPU-backed layer=] with |layer|, |binding|, |init|, |init|'s
+    {{XRGPULayerInit/viewPixelWidth}}, |init|'s {{XRGPULayerInit/viewPixelHeight}}, and
+    |arrayLayerCount|.
+ 1. Set |layer|'s {{XRCubeLayer/space}} to |init|'s {{XRGPULayerInit/space}}.
+ 1. If |init|'s {{XRGPUCubeLayerInit/orientation}} is present, set |layer|'s
+    {{XRCubeLayer/orientation}} to the result of running {{DOMPointReadOnly/fromPoint()}} with
+    |init|'s {{XRGPUCubeLayerInit/orientation}}. Otherwise, set it to the result of running
+    {{DOMPointReadOnly/fromPoint()}} with `{ x: 0, y: 0, z: 0, w: 1 }`.
+ 1. Return |layer|.
+
+</div>
+
+Cube layer textures use six consecutive array layers for each eye, in the order `+X`, `-X`, `+Y`,
+`-Y`, `+Z`, `-Z`. For a stereo cube layer, the left eye's faces begin at array layer `0` and the
+right eye's faces begin at array layer `6`.
+
+<div class="algorithm" data-algorithm="validate WebGPU subimage creation">
+
+To <dfn>validate WebGPU subimage creation</dfn> with an {{XRGPUBinding}} |binding|, an
+{{XRCompositionLayer}} |layer|, and an {{XRFrame}} |frame|, the user agent MUST run the following
+steps:
+
+ 1. If |layer| is not a [=WebGPU-backed layer=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |layer|'s [=XRCompositionLayer/destroyed=] boolean is `true`, throw an
+    {{InvalidStateError}} {{DOMException}}.
+ 1. Let |session| be |binding|'s [=XRGPUBinding/session=].
+ 1. If |layer|'s [=XRCompositionLayer/session=] is not |session|, throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. If |layer|'s [=XRCompositionLayer/WebGPU device=] is not |binding|'s
+    [=XRGPUBinding/device=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |binding|'s [=XRGPUBinding/device=] has been [=destroyed=], throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. If |frame|'s [=XRFrame's session|session=] is not |session|, throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. If |frame| is not an active [=XR animation frame=], throw an {{InvalidStateError}}
+    {{DOMException}}.
+ 1. If |layer|'s [=XRCompositionLayer/list of texture sets=] is empty, throw an
+    {{InvalidStateError}} {{DOMException}}.
+ 1. If |layer| is not contained in |session|'s {{XRSession/renderState}}.{{XRRenderState/layers}},
+    throw a {{TypeError}}.
+ 1. If |layer|'s [=XRCompositionLayer/isStatic=] is `true` and its
+    {{XRCompositionLayer/needsRedraw}} is `false`, throw an {{InvalidStateError}} {{DOMException}}.
+
+</div>
+
+<span id="xrgpubinding-getsubimage"></span>
+
+<div class="algorithm" data-algorithm="getSubImage">
+
+The <dfn method for="XRGPUBinding">getSubImage(|layer|, |frame|, |eye|)</dfn> method returns an {{XRGPUSubImage}} for non-projection layers.
+
+When invoked, the user agent MUST run the following steps:
+
+ 1. If the `"layers"` [=feature descriptor=] is not enabled for the session, throw a {{NotSupportedError}} {{DOMException}}.
+ 1. Run [=validate WebGPU subimage creation=] with this {{XRGPUBinding}}, |layer|, and |frame|.
+ 1. If |layer| is an {{XRProjectionLayer}}, throw a {{TypeError}}.
+ 1. Let |eyeIndex| be `1` if |eye| is {{XREye/"right"}}, and `0` otherwise.
+ 1. If |layer|'s {{XRCompositionLayer/layout}} is not {{XRLayerLayout/"mono"}} and |eye| is
+    {{XREye/"none"}}, throw a {{TypeError}}.
+ 1. Run [=acquire WebGPU textures=] for |layer| and |frame|.
+ 1. Let |subImage| be a new {{XRGPUSubImage}}.
+ 1. Set |subImage|'s {{XRGPUSubImage/colorTexture}} to the layer's [=current color texture=].
+ 1. Set |subImage|'s {{XRGPUSubImage/depthStencilTexture}} to the layer's [=current depth-stencil texture=], or `null` if no depth/stencil format was specified during layer creation.
+ 1. Set |subImage|'s {{XRGPUSubImage/motionVectorTexture}} to `null`.
+ 1. Set |subImage|'s {{XRSubImage/viewport}} to the full width and height of |subImage|'s
+    {{XRGPUSubImage/colorTexture}}, with an x and y offset of `0`.
+ 1. If |layer|'s {{XRCompositionLayer/layout}} is {{XRLayerLayout/"stereo-left-right"}}, divide
+    |subImage|'s {{XRSubImage/viewport}} width by `2` and set its x offset to that width multiplied
+    by |eyeIndex|.
+ 1. If |layer|'s {{XRCompositionLayer/layout}} is {{XRLayerLayout/"stereo-top-bottom"}}, divide
+    |subImage|'s {{XRSubImage/viewport}} height by `2` and set its y offset to that height multiplied
+    by |eyeIndex|.
+ 1. Set |subImage|'s [=XRGPUSubImage/array layer index=] as follows:
+    <dl class="switch">
+      <dt>If |layer| is an {{XRCubeLayer}} and its {{XRCompositionLayer/layout}} is
+        {{XRLayerLayout/"stereo"}}</dt>
+      <dd>Set it to |eyeIndex| multiplied by `6`.</dd>
+      <dt>If |layer|'s {{XRCompositionLayer/layout}} is {{XRLayerLayout/"stereo"}}</dt>
+      <dd>Set it to |eyeIndex|.</dd>
+      <dt>Otherwise</dt>
+      <dd>Set it to `0`.</dd>
+    </dl>
+ 1. Return |subImage|.
+
+</div>
+
+<span id="xrgpubinding-getviewsubimage"></span>
+
+<div class="algorithm" data-algorithm="getViewSubImage">
+
+The <dfn method for="XRGPUBinding">getViewSubImage(|layer|, |view|)</dfn> method returns an {{XRGPUSubImage}} for a specific view of a projection layer.
+
+When invoked, the user agent MUST run the following steps:
+
+ 1. If |view|'s [=XRView's session|session=] is not the [=XRGPUBinding/session=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. Let |frame| be |view|'s [=XRView/frame=].
+ 1. Run [=validate WebGPU subimage creation=] with this {{XRGPUBinding}}, |layer|, and |frame|.
+ 1. If |view|'s [=view/active=] flag is `false`, throw an {{InvalidStateError}} {{DOMException}}.
+ 1. Run [=acquire WebGPU textures=] for |layer| and |frame|.
+ 1. Let |subImage| be a new {{XRGPUSubImage}}.
+ 1. Set |subImage|'s {{XRGPUSubImage/colorTexture}} to the layer's [=current color texture=].
+ 1. Set |subImage|'s {{XRGPUSubImage/depthStencilTexture}} to the layer's [=current depth-stencil texture=], or `null` if no depth/stencil format was specified during layer creation.
+ 1. Set |subImage|'s {{XRGPUSubImage/motionVectorTexture}} to the layer's [=current motion vector texture=], or `null` if the layer's [=motion vector texture descriptor=] is `null`.
+ 1. Set |subImage|'s [=XRGPUSubImage/array layer index=] to the view's index.
+ 1. Set |subImage|'s viewport to the region of the {{XRGPUSubImage/colorTexture}} corresponding to |view|, adjusted by the current viewport scale.
+ 1. Return |subImage|.
+
+</div>
+
+<div class="example">
+Rendering a projection layer during an animation frame when the [=feature descriptor/space-warp=]
+[=feature descriptor=] is not enabled. In this case, the color and depth/stencil textures have the
+same dimensions and use the same viewport:
+
+  <pre highlight="js">
+    function onXRFrame(time, frame) {
+      session.requestAnimationFrame(onXRFrame);
+
+      const pose = frame.getViewerPose(refSpace);
+      if (!pose) return;
+
+      const commandEncoder = device.createCommandEncoder();
+
+      for (const view of pose.views) {
+        const subImage = binding.getViewSubImage(layer, view);
+        const viewDesc = subImage.getViewDescriptor();
+
+        const passEncoder = commandEncoder.beginRenderPass({
+          colorAttachments: [{
+            view: subImage.colorTexture.createView(viewDesc),
+            loadOp: 'clear',
+            storeOp: 'store',
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          }],
+          depthStencilAttachment: {
+            view: subImage.depthStencilTexture.createView(viewDesc),
+            depthLoadOp: 'clear',
+            depthClearValue: 1.0,
+            depthStoreOp: 'store',
+          },
+        });
+
+        const vp = subImage.viewport;
+        passEncoder.setViewport(vp.x, vp.y, vp.width, vp.height, 0.0, 1.0);
+
+        // Render scene from the viewpoint of view...
+
+        passEncoder.end();
+      }
+
+      device.queue.submit([commandEncoder.finish()]);
+    }
+  </pre>
 </div>
 
 # Space Warp # {#spacewarp}
@@ -671,16 +1210,17 @@ The <dfn dict-member for="XRGPUCubeLayerInit">orientation</dfn> member specifies
 By submitting a {{XRGPUSubImage/motionVectorTexture}} along with a {{XRGPUSubImage/depthStencilTexture}}, the [=XR Compositor=] can do high quality frame extrapolation and reprojection which allows the user agent to run at a reduced framerate but still provide a smooth experience to users. The rate at which {{XRSession/requestAnimationFrame()}} callbacks are delivered may be lower than the display's native refresh rate. The [=XR Compositor=] will synthesize the missing frames using the motion vectors and depth information provided by the experience.
 
 To enable [=space warp=], the {{XRSession}} MUST be created with the [=feature descriptor/space-warp=] [=feature descriptor=].
-If the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, the [=XR Compositor=] MUST make use of depth values, {{XRProjectionLayer/ignoreDepthValues}} MUST be set to `false`, and {{XRGPUBinding/usesDepthValues}} MUST be set to `true`.
+If the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, {{XRGPUBinding/usesDepthValues}} MUST be set to `true`.
+For an {{XRProjectionLayer}} whose [=motion vector texture descriptor=] is not `null`, the [=XR Compositor=] MUST make use of depth values and {{XRProjectionLayer/ignoreDepthValues}} MUST be set to `false`.
 
-When the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled, the experience should render representative depth values into the {{XRGPUSubImage/depthStencilTexture}} for each {{XRProjectionLayer}} it submits.
-The {{XRGPUSubImage/depthStencilTexture}} and {{XRGPUSubImage/motionVectorTexture}} will have the same dimensions, which may be different from the dimensions of the {{XRGPUSubImage/colorTexture}}.
-Authors should render depth/stencil and motion vector information to the full extent of the texture view selected by {{XRGPUSubImage/getViewDescriptor()}}, rather than to the {{XRSubImage/viewport}}.
+An {{XRProjectionLayer}} participates in [=space warp=] only when its [=motion vector texture descriptor=] is not `null`. Such a descriptor is allocated only when the [=feature descriptor/space-warp=] [=feature descriptor=] is enabled and the layer was created with an {{XRGPUProjectionLayerInit/depthStencilFormat}} that is present and is not {{GPUTextureFormat/"stencil8"}}. For each {{XRGPUSubImage}} obtained from such a layer, the experience SHOULD render representative depth values into the {{XRGPUSubImage/depthStencilTexture}}.
+When the {{XRGPUSubImage/motionVectorTexture}} is not `null`, the {{XRGPUSubImage/depthStencilTexture}} MUST also not be `null`, and the two textures MUST have the same dimensions, which MAY be different from the dimensions of the {{XRGPUSubImage/colorTexture}}.
+For such a subimage, authors SHOULD render depth/stencil and motion vector information to the full extent of the texture view selected by {{XRGPUSubImage/getViewDescriptor()}}, rather than to the {{XRSubImage/viewport}}.
 
 NOTE: Since the depth/stencil and motion vector attachments can have different dimensions than the color attachment, they are not intended to be attached to the render pass used to render into the {{XRGPUSubImage/colorTexture}}.
-Authors should render depth/stencil and motion vector information separately at their attachment dimensions.
+Authors SHOULD render depth/stencil and motion vector information separately at their attachment dimensions.
 
-The {{XRGPUSubImage/motionVectorTexture}} MUST be in `"rgba16float"` format. The author SHOULD fill in the RG components of this texture with the 2D screen-space motion vector for that area, expressed as a delta in Normalized Device Coordinates between the current frame and the previous frame. The motion vector is computed as `(currentClipPos / currentW) - (prevClipPos / prevW)`, where `currentClipPos` and `prevClipPos` are the clip space positions of the fragment in the current and previous frames, respectively. The red channel corresponds to the delta in X, and the green channel corresponds to the delta in Y. The blue channel MAY contain the delta in Z depth, and the alpha channel is unused.
+When the {{XRGPUSubImage/motionVectorTexture}} is not `null`, it MUST be in `"rgba16float"` format. For such a texture, the author SHOULD fill in the RG components with the 2D screen-space motion vector for that area, expressed as a delta in Normalized Device Coordinates between the current frame and the previous frame. The motion vector is computed as `(currentClipPos / currentW) - (prevClipPos / prevW)`, where `currentClipPos` and `prevClipPos` are the clip space positions of the fragment in the current and previous frames, respectively. The red channel corresponds to the delta in X, and the green channel corresponds to the delta in Y. The blue channel MAY contain the delta in Z depth, and the alpha channel is unused.
 
 If the {{XRGPUSubImage/motionVectorTexture}} or {{XRGPUSubImage/depthStencilTexture}} were not submitted during the processing of the {{XRFrame}}, the [=XR Compositor=] MUST process the {{XRFrame}} as if [=space warp=] was not enabled.
 
