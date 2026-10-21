@@ -30,6 +30,7 @@ spec: webxr; urlPrefix: https://immersive-web.github.io/webxr/
         text: list of views; url: list-of-views
         text: XR animation frame; url: xr-animation-frame
         text: ended; url: dom-xrsession-ended
+        text: shut down the session; url: shut-down-the-session
         text: inline session; url: inline-session
         text: immersive session; url: immersive-session
         text: XR device; url: xr-device
@@ -55,6 +56,10 @@ spec: webxrlayers-1; urlPrefix: https://immersive-web.github.io/layers/
 spec: webgpu; urlPrefix: https://gpuweb.github.io/gpuweb/
     type: dfn
         text: destroyed; url: destroyed
+        text: content timeline; url: content-timeline
+        text: device timeline; url: device-timeline
+        text: queue timeline; url: queue-timeline
+        text: RenderState; url: renderstate
 </pre>
 
 <pre class="link-defaults">
@@ -118,7 +123,7 @@ This specification uses the terms [=XR device=], [=XR Compositor=], {{XRSession}
 
 It uses the terms {{XRCompositionLayer}}, {{XRProjectionLayer}}, {{XRQuadLayer}}, {{XRCylinderLayer}}, {{XREquirectLayer}}, {{XRCubeLayer}}, {{XRSubImage}}, and {{XRWebGLBinding}} as defined in the [WebXR Layers API](https://immersive-web.github.io/layers/) specification.
 
-It uses the terms {{GPUDevice}}, {{GPUAdapter}}, {{GPUQueue}}, {{GPUTexture}}, {{GPUTextureViewDescriptor}}, {{GPUTextureFormat}}, and {{GPUTextureUsageFlags}} as defined in the [WebGPU](https://gpuweb.github.io/gpuweb/) specification.
+It uses the terms {{GPUDevice}}, {{GPUAdapter}}, {{GPUQueue}}, {{GPUTexture}}, {{GPUTextureView}}, {{GPUTextureViewDescriptor}}, {{GPUTextureFormat}}, {{GPUTextureUsageFlags}}, {{GPURenderPassDescriptor}}, and {{GPURenderPassEncoder}} as defined in the [WebGPU](https://gpuweb.github.io/gpuweb/) specification.
 
 ## Application flow ## {#applicationflow}
 
@@ -665,6 +670,8 @@ interface XRGPUBinding {
   XRGPUSubImage getViewSubImage(XRProjectionLayer layer, XRView view);
 
   GPUTextureFormat getPreferredColorFormat();
+
+  undefined foveateRenderTarget((GPUTexture or GPUTextureView) renderTarget, float foveation);
 };
 </script>
 
@@ -813,8 +820,6 @@ steps:
     {{XRGPUBinding/usesDepthValues}} is `true`, set |layer|'s
     {{XRProjectionLayer/ignoreDepthValues}} to `false`.
  1. Otherwise, set |layer|'s {{XRProjectionLayer/ignoreDepthValues}} to `true`.
- 1. If fixed foveation is supported, set |layer|'s {{XRProjectionLayer/fixedFoveation}} to `0`.
-    Otherwise, set it to `null`.
  1. Set |layer|'s {{XRProjectionLayer/deltaPose}} to `null`.
  1. Set |layer|'s [=color texture descriptor=] to |colorDescriptor|.
  1. Set |layer|'s [=depth-stencil texture descriptor=] to |depthStencilDescriptor|.
@@ -1201,6 +1206,302 @@ same dimensions and use the same viewport:
 
       device.queue.submit([commandEncoder.finish()]);
     }
+  </pre>
+</div>
+
+<span id="xrgpubinding-foveaterendertarget"></span>
+
+<div class="algorithm" data-algorithm="foveateRenderTarget">
+
+The <dfn method for="XRGPUBinding">foveateRenderTarget(|renderTarget|, |foveation|)</dfn> method sets
+the rendering foveation preference for a {{GPUTexture}} or {{GPUTextureView}} when it is used as
+a color attachment's {{GPURenderPassColorAttachment/view}}. The target MAY be an
+application-created texture or view, including a multisampled render attachment, or a texture
+or view obtained from an {{XRGPUSubImage}}.
+
+When this method is invoked on an {{XRGPUBinding}} |binding|, the user agent MUST run the following
+steps on the [=content timeline=]:
+
+ 1. Let |session| be |binding|'s [=XRGPUBinding/session=].
+ 1. Let |device| be |binding|'s [=XRGPUBinding/device=].
+ 1. If |session|'s [=ended=] value is `true`, throw an {{InvalidStateError}} {{DOMException}}.
+ 1. If |device| has been [=destroyed=], throw an {{InvalidStateError}} {{DOMException}}.
+ 1. Let |texture| be |renderTarget| if it is a {{GPUTexture}}, or
+    |renderTarget|.{{GPUTextureView/[[texture]]}} otherwise.
+ 1. If |texture|.{{GPUObjectBase/[[device]]}} is not |device|, throw an
+    {{InvalidStateError}} {{DOMException}}.
+ 1. If |texture|'s {{GPUTexture/dimension}} is not {{GPUTextureDimension/"2d"}}, or its
+    {{GPUTexture/usage}} does not include {{GPUTextureUsage/RENDER_ATTACHMENT}}, throw a
+    {{NotSupportedError}} {{DOMException}}.
+ 1. Set |foveation| to max(0, min(1, |foveation|)).
+ 1. Set |renderTarget|'s [=explicit XR foveation request=] to a new [=XR foveation request=] whose
+    [=XR foveation request/session=] is |session| and whose [=XR foveation request/level=] is
+    |foveation|.
+ 1. Add a weak reference to |renderTarget| to |session|'s
+    [=XRSession/foveated WebGPU render targets=] if it is not already present.
+
+</div>
+
+NOTE: This method records a preference. WebGPU's normal validation of textures, views, and render
+passes still applies when the target is used as an attachment. This method can be called outside
+an XR animation frame callback; the frame restrictions below apply when beginning and submitting
+render passes that use the preference.
+
+# Foveated Rendering # {#foveated-rendering}
+
+Foveated rendering reduces rendering work away from the center of a view by varying
+rasterization or fragment shading density. The user agent determines the foveation profile from
+the [=XRGPUBinding/session=] associated with the request and the capabilities of the [=XR device=].
+A level of `0` MUST disable foveated rendering for the render pass. Positive levels request
+increasing amounts of foveation, with `1` requesting the maximum supported amount. The user agent
+MAY quantize positive levels or use a fixed device-provided profile. If foveated rendering is not
+supported for the device or render-pass configuration, the user agent MUST render without
+foveation.
+
+An <dfn>XR foveation request</dfn> is a record containing an {{XRSession}}
+<dfn for="XR foveation request">session</dfn> and a float
+<dfn for="XR foveation request">level</dfn> in the range `[0, 1]`.
+
+Each {{GPUTexture}} and {{GPUTextureView}} has an associated
+<dfn>explicit XR foveation request</dfn>, initially `null`. A texture's request applies to its
+views unless a view has its own request. Setting a view's level to `0` explicitly overrides the
+texture's request. The setting persists until it is replaced or its session ends, and is shared
+by bindings associated with that session and device.
+
+Textures created for [=WebGPU-backed layer=]s have no implicit rendering foveation. They follow
+the same rules as application-created textures: a color attachment view for which
+[=determine the XR foveation request=] returns `null` has an effective foveation level of `0`.
+
+Each {{XRSession}} has an internal set of weak references to {{GPUTexture}} and {{GPUTextureView}}
+objects, <dfn for="XRSession">foveated WebGPU render targets</dfn>, initially empty. This set
+MUST NOT prevent the referenced objects from being garbage collected.
+
+An <dfn>XR foveation frame</dfn> is an internal record identifying one invocation of the
+[=XR animation frame=] algorithm. It contains an {{XRSession}}
+<dfn for="XR foveation frame">session</dfn>. Each {{XRSession}} has an internal
+<dfn for="XRSession">current foveation frame</dfn>, initially `null`.
+
+The [=XR animation frame=] algorithm is extended as follows: immediately before the loop that
+invokes the animation frame callbacks, set the session's [=XRSession/current foveation frame=]
+to a new [=XR foveation frame=] whose [=XR foveation frame/session=] is that session. Immediately
+after that loop completes, set the session's [=XRSession/current foveation frame=] to `null`.
+Each invocation MUST create a distinct record, even if the {{XRFrame}} object is reused.
+
+An <dfn>XR render pass foveation state</dfn> is a record containing an [=XR foveation frame=]
+<dfn for="XR render pass foveation state">frame</dfn> and an immutable, user agent-defined
+foveation <dfn for="XR render pass foveation state">profile</dfn>. The profile MAY represent
+disabled foveation when foveated rendering is unavailable.
+
+Each {{GPURenderPassEncoder}} has an internal
+<dfn for="GPURenderPassEncoder">captured XR foveation state</dfn>, initially `null`. It is either
+`null` (no positive color attachment foveation request), failure (the pass cannot satisfy the foveation
+requirements), or an [=XR render pass foveation state=].
+
+Each {{GPUCommandEncoder}} and {{GPUCommandBuffer}} has an internal
+<dfn>required XR foveation frame</dfn>, initially `null`, which is the [=XR foveation frame=]
+required by its foveated render passes. This reference is maintained on the [=content timeline=].
+All foveated render passes recorded by a command encoder MUST belong to that frame.
+
+<div class="algorithm" data-algorithm="determine the XR foveation request">
+
+To <dfn>determine the XR foveation request</dfn> for a {{GPUTexture}} or {{GPUTextureView}}
+|renderTarget|, the user agent MUST run the following steps on the [=content timeline=]:
+
+ 1. Let |request| be |renderTarget|'s [=explicit XR foveation request=].
+ 1. If |request| is not `null` and its [=XR foveation request/session=]'s [=ended=] value is
+    `false`, return |request|.
+ 1. If |renderTarget| is a {{GPUTextureView}}, return the result of running
+    [=determine the XR foveation request=] for |renderTarget|.{{GPUTextureView/[[texture]]}}.
+ 1. Return `null`.
+
+</div>
+
+<div class="algorithm" data-algorithm="capture XR render pass foveation">
+
+To <dfn>capture XR render pass foveation</dfn> for a {{GPURenderPassDescriptor}} |descriptor|, the
+user agent MUST run the following steps on the [=content timeline=]:
+
+ 1. Let |colorTargets| be an empty [=/list=].
+ 1. For each non-`null` |attachment| in |descriptor|.{{GPURenderPassDescriptor/colorAttachments}},
+    [=list/append=] |attachment|.{{GPURenderPassColorAttachment/view}} to |colorTargets|.
+ 1. Let |level| be `null`.
+ 1. Let |request| be `null`.
+ 1. For each |renderTarget| in |colorTargets|:
+    1. Let |attachmentRequest| be the result of running [=determine the XR foveation request=]
+        for |renderTarget|.
+    1. Let |attachmentLevel| be `0`.
+    1. If |attachmentRequest| is not `null`, set |attachmentLevel| to its
+        [=XR foveation request/level=].
+    1. If |level| is `null`, set |level| to |attachmentLevel|.
+    1. Otherwise, if |attachmentLevel| is not |level|, return failure.
+    1. If |attachmentLevel| is greater than `0`:
+        1. If |request| is `null`, set |request| to |attachmentRequest|.
+        1. Otherwise, if |attachmentRequest|'s [=XR foveation request/session=] is not
+            |request|'s [=XR foveation request/session=], return failure.
+ 1. If |request| is `null`, return `null`.
+ 1. Let |session| be |request|'s [=XR foveation request/session=].
+ 1. Let |frame| be |session|'s [=XRSession/current foveation frame=].
+ 1. If |frame| is `null`, return failure.
+ 1. Return a new [=XR render pass foveation state=] whose [=XR render pass foveation state/frame=]
+    is |frame| and whose [=XR render pass foveation state/profile=] is an immutable snapshot of
+    the user agent-defined foveation profile for |session| and |request|'s
+    [=XR foveation request/level=].
+
+</div>
+
+The {{GPUCommandEncoder/beginRenderPass()}} algorithm is extended as follows:
+
+ 1. On the [=content timeline=], immediately after creating the {{GPURenderPassEncoder}} and
+    before issuing its initialization steps, set its
+    [=GPURenderPassEncoder/captured XR foveation state=] to the result of running
+    [=capture XR render pass foveation=] with the supplied {{GPURenderPassDescriptor}}.
+    If the result is an [=XR render pass foveation state=]:
+    1. If the command encoder's [=required XR foveation frame=] is `null`, set it to the result's
+        [=XR render pass foveation state/frame=].
+    1. Otherwise, if the command encoder's [=required XR foveation frame=] is not the result's
+        [=XR render pass foveation state/frame=], set the pass's
+        [=GPURenderPassEncoder/captured XR foveation state=] to failure.
+ 1. On the [=device timeline=], after locking the command encoder and before validating the
+    {{GPURenderPassDescriptor}}, if the pass's
+    [=GPURenderPassEncoder/captured XR foveation state=] is failure:
+    1. [$generate a validation error$] for the command encoder's {{GPUObjectBase/[[device]]}}.
+    1. [$invalidate$] the pass and return from its initialization steps.
+ 1. On the [=queue timeline=], immediately after creating the [=RenderState=], if the pass's
+    [=GPURenderPassEncoder/captured XR foveation state=] is `null`, disable foveated rendering
+    for its draw commands. Otherwise, apply the state's [=XR render pass foveation state/profile=]
+    to the draw commands executed in that pass.
+
+The {{GPUCommandEncoder/finish()}} algorithm is extended as follows: on the [=content timeline=],
+immediately after creating the {{GPUCommandBuffer}} and before issuing the finish steps, set the
+command buffer's [=required XR foveation frame=] to the command encoder's
+[=required XR foveation frame=].
+
+<div class="algorithm" data-algorithm="validate XR foveation submission">
+
+To <dfn>validate XR foveation submission</dfn> for a sequence of {{GPUCommandBuffer}}s
+|commandBuffers|, the user agent MUST run the following steps on the [=content timeline=]:
+
+ 1. For each |commandBuffer| in |commandBuffers|:
+    1. Let |frame| be |commandBuffer|'s [=required XR foveation frame=].
+    1. If |frame| is `null`, continue.
+    1. Let |session| be |frame|'s [=XR foveation frame/session=].
+    1. If |session|'s [=ended=] value is `true` or its [=XRSession/current foveation frame=]
+        is not |frame|, return `false`.
+ 1. Return `true`.
+
+</div>
+
+The {{GPUQueue/submit()}} algorithm is extended as follows:
+
+ 1. On the [=content timeline=], before issuing the submission steps on the [=device timeline=],
+    capture the result of running [=validate XR foveation submission=] with the supplied command
+    buffers.
+ 1. On the [=device timeline=], add the requirement that the captured result is `true` to the
+    submission validation rules. If it is `false`, [$generate a validation error$] for the queue's
+    {{GPUObjectBase/[[device]]}}, [$invalidate$] each supplied {{GPUCommandBuffer}}, and return
+    without submitting any commands.
+
+A render pass whose color attachment views have a positive effective foveation level MUST be
+begun and its command buffer submitted during the animation frame callbacks for the requests'
+session, in the same [=XR animation frame=]
+invocation. Beginning such a pass outside those callbacks, or submitting it outside the invocation
+in which it was begun, MUST generate a {{GPUValidationError}}. This requirement applies even if
+the device does not support foveated rendering.
+
+The frame checks use the time at which {{GPUCommandEncoder/beginRenderPass()}} and
+{{GPUQueue/submit()}} are called on the [=content timeline=]. The checks MUST NOT be repeated
+against the session's current frame on the [=device timeline=] or [=queue timeline=].
+
+NOTE: Validly submitted GPU work can execute asynchronously after the callbacks have returned.
+
+The effective foveation levels of the {{GPURenderPassColorAttachment/view}} members of all
+non-null {{GPURenderPassDescriptor/colorAttachments}} MUST match. A view for which
+[=determine the XR foveation request=] returns `null` has level `0`. For a nonzero level, all
+requests MUST identify the same [=XR foveation request/session=]. Failure to meet these
+requirements MUST generate a {{GPUValidationError}}, even on a device that does not support
+foveated rendering.
+
+The captured foveation policy applies to the pass's draw commands. The depth/stencil attachment
+does not require a separate foveation request.
+A request on its {{GPURenderPassDepthStencilAttachment/view}} MUST NOT contribute to selecting
+the policy or participate in the level comparison. A pass without any non-null color attachments
+MUST have foveated rendering disabled.
+
+A {{GPURenderPassColorAttachment/resolveTarget}} MUST NOT contribute a request to the pass's
+captured state or participate in the level comparison. For multisampled rendering, the request
+on the color attachment's {{GPURenderPassColorAttachment/view}} controls foveation; a request on
+the resolve target alone does not enable it.
+
+NOTE: A foveated multisampled color attachment can resolve into an XR texture with no foveation
+request. That texture's preference only participates in the comparison if it is used as a color
+attachment view in another render pass.
+
+Changing a target's request after {{GPUCommandEncoder/beginRenderPass()}} has been called,
+including while that pass is open or before its command buffer is submitted, MUST NOT affect
+the captured state. Such a change only affects subsequently begun render passes. The user agent
+MUST NOT split a render pass in response to a call to {{XRGPUBinding/foveateRenderTarget()}}.
+
+Foveation MUST NOT change a texture's logical dimensions, format, or usage, or alter WebGPU's
+resource validation and lifetime rules. The captured state affects rasterization and fragment
+shading of draw commands only. Attachment load and clear operations, texture sampling, copy
+operations, compute dispatches, and multisample resolves retain their normal WebGPU behavior.
+
+<div class="algorithm" data-algorithm="clear WebGPU render target foveation">
+
+When running [=shut down the session=] for an {{XRSession}} |session|, the user agent MUST run
+the following additional steps on the [=content timeline=]:
+
+ 1. For each live |renderTarget| referenced by |session|'s
+    [=XRSession/foveated WebGPU render targets=]:
+    1. Let |request| be |renderTarget|'s [=explicit XR foveation request=].
+    1. If |request| is not `null` and its [=XR foveation request/session=] is |session|, set
+        |renderTarget|'s [=explicit XR foveation request=] to `null`.
+ 1. Empty |session|'s [=XRSession/foveated WebGPU render targets=].
+ 1. Set |session|'s [=XRSession/current foveation frame=] to `null`.
+
+</div>
+
+Ending the session MUST NOT alter the state captured by an already encoded render pass. Any
+subsequent submission of its foveated commands MUST fail the submission validation above;
+previously submitted work remains subject to WebGPU's resource lifetime rules.
+
+<div class="example">
+Rendering a foveated scene into an application-created multisampled attachment, then
+post-processing its resolved image into an XR projection layer without foveation. This code
+runs within an XR animation frame for one {{XRView}}. `sceneMSAAView` is a multisampled render
+attachment, and `sceneColorView` is a single-sampled resolve target that can also be sampled:
+
+  <pre highlight="js">
+    binding.foveateRenderTarget(sceneMSAAView, 0.7);
+
+    const encoder = device.createCommandEncoder();
+    const scenePass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: sceneMSAAView,
+        resolveTarget: sceneColorView,
+        loadOp: 'clear',
+        storeOp: 'discard',
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+      }],
+    });
+    renderScene(scenePass, view);
+    scenePass.end();
+
+    const subImage = binding.getViewSubImage(layer, view);
+    const postPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: subImage.colorTexture.createView(subImage.getViewDescriptor()),
+        loadOp: 'clear',
+        storeOp: 'store',
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+      }],
+    });
+    const vp = subImage.viewport;
+    postPass.setViewport(vp.x, vp.y, vp.width, vp.height, 0, 1);
+    renderPostProcessing(postPass, sceneColorView);
+    postPass.end();
+
+    device.queue.submit([encoder.finish()]);
   </pre>
 </div>
 
